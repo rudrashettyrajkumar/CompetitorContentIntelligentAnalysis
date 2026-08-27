@@ -1,0 +1,8 @@
+name: format_classify
+version: 1
+description: Classify LinkedIn company posts into the 17-value content format taxonomy
+model_tier: fast
+temperature: 0.1
+output_schema: FormatClassification
+batch: true
+variables: [posts, taxonomy]

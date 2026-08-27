@@ -1,0 +1,8 @@
+name: topic_classify
+version: 1
+description: Assign each LinkedIn post a primary topic from the taxonomy plus a free-text sub-topic
+model_tier: fast
+temperature: 0.1
+output_schema: TopicClassification
+batch: true
+variables: [posts, taxonomy]

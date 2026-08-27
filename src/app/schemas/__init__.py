@@ -24,3 +24,8 @@ class EchoResult(BaseModel):
 
     message: str
     language: str
+
+
+# Import side-effect: registers every intelligence-layer output schema so prompt YAML
+# metadata (``output_schema: <Name>``) resolves at PromptRegistry load time.
+from app.schemas import intelligence as _intelligence  # noqa: E402,F401

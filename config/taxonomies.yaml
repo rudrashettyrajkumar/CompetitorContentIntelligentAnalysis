@@ -1,0 +1,53 @@
+# Classification taxonomies (EPIC-03). Edit here, never hard-code in Python.
+# Every post_intelligence taxonomy field must hold one of these configured values.
+
+formats:
+  - static_image
+  - carousel
+  - video
+  - text_only
+  - poll
+  - blog_article
+  - case_study
+  - whitepaper_report
+  - customer_story
+  - thought_leadership
+  - product_promotion
+  - event_webinar
+  - employer_branding
+  - hiring
+  - industry_news
+  - research_data
+  - ai_related
+
+topics:
+  - ai
+  - digital_transformation
+  - cloud
+  - cybersecurity
+  - data_analytics
+  - digital_marketing
+  - automation
+  - industry_4_0
+  - customer_experience
+  - other          # escape hatch; sub_topic stays free-text
+
+cta_types:
+  - follow
+  - comment
+  - share
+  - register
+  - download
+  - learn_more
+  - contact
+  - demo
+  - none
+  - other
+
+keyword_categories:
+  - frequent
+  - industry_term
+  - problem_solution
+  - buyer_intent
+  - emerging
+  - long_tail
