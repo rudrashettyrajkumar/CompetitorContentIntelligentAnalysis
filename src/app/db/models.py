@@ -82,6 +82,7 @@ class PostIntelligence(Base):
     sub_topic: Mapped[str | None] = mapped_column(String(200))
     cta: Mapped[str | None] = mapped_column(String(50))
     cta_text: Mapped[str | None] = mapped_column(String(500))
+    hashtags: Mapped[list | None] = mapped_column(JSON)  # from RawPost.hashtags, not the LLM
     keywords: Mapped[list | None] = mapped_column(JSON)
     engagement_score: Mapped[float | None] = mapped_column(Float)
     engagement_rate: Mapped[float | None] = mapped_column(Float)

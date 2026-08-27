@@ -67,6 +67,15 @@ class AppConfig(BaseModel):
     loop: dict = {}
 
 
+class Taxonomies(BaseModel):
+    """Configured classification vocabularies (config/taxonomies.yaml)."""
+
+    formats: list[str]
+    topics: list[str]
+    cta_types: list[str]
+    keyword_categories: list[str]
+
+
 def _load_yaml(path: Path) -> dict:
     with open(path, encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
@@ -85,3 +94,8 @@ def get_models_config(path: Path | None = None) -> ModelsConfig:
 @lru_cache
 def get_app_config(path: Path | None = None) -> AppConfig:
     return AppConfig.model_validate(_load_yaml(path or CONFIG_DIR / "app.yaml"))
+
+
+@lru_cache
+def get_taxonomies(path: Path | None = None) -> Taxonomies:
+    return Taxonomies.model_validate(_load_yaml(path or CONFIG_DIR / "taxonomies.yaml"))

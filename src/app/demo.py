@@ -1,19 +1,32 @@
 """End-to-end demo entrypoint (`make demo`).
 
-EPIC-02 scope: ingest the sample workbook, then run a collect-only run with the mock
-adapter. Later epics extend this to the full classification/analysis/strategy pipeline.
-Fully offline — no LLM calls, no network.
+Scope through EPIC-03: ingest the sample workbook, run a collect-only run with the mock
+adapter, then run the LangGraph classification subgraph over the collected posts. Later
+epics extend this to scoring / campaigns / strategy. Fully offline — FakeLLM, no network.
+
+The demo rebuilds its SQLite database each run so the schema always matches the code.
 """
 
 from __future__ import annotations
 
-from app.config.settings import PROJECT_ROOT, get_app_config, get_settings
+from app.config.settings import (
+    PROJECT_ROOT,
+    PROMPTS_DIR,
+    get_app_config,
+    get_models_config,
+    get_settings,
+)
 from app.core.logging import configure_logging, get_logger
+from app.core.model_router import FakeLLM, ModelRouter
+from app.core.prompt_registry import PromptRegistry
 from app.datasources.base import get_datasource, resolve_period_days
 from app.datasources.collector import collect_for_run
 from app.db.engine import build_engine, build_session_factory, init_db
-from app.db.repos import CompetitorRepo, ProfileRepo, RunRepo
+from app.db.models import Base
+from app.db.repos import CompetitorRepo, PostIntelligenceRepo, ProfileRepo, RunRepo
 from app.input.excel import ingest_excel
+from app.intelligence.fakes import register_classification_fakes
+from app.intelligence.graph import classify_posts_for_run
 
 SAMPLE_XLSX = PROJECT_ROOT / "data" / "input" / "sample_competitors.xlsx"
 
@@ -25,6 +38,7 @@ def main() -> None:
     log = get_logger("demo")
 
     engine = build_engine(settings.database_url)
+    Base.metadata.drop_all(engine)  # deterministic, schema-fresh demo run
     init_db(engine)
     session = build_session_factory(engine)()
 
@@ -59,11 +73,27 @@ def main() -> None:
         adapter=adapter,
         period_days=period_days,
     )
+    session.commit()
+
+    # --- EPIC-03: classification subgraph over the collected posts (offline FakeLLM) ---
+    registry = PromptRegistry(PROMPTS_DIR)
+    fake_llm = FakeLLM()
+    register_classification_fakes(fake_llm)
+    router = ModelRouter(settings, get_models_config(), fake_llm=fake_llm)
+    classify = classify_posts_for_run(session, run_id=run.id, router=router, registry=registry)
     run_repo.finish(run.id)
     session.commit()
 
     profile_repo = ProfileRepo(session)
-    print("\nEPIC-02 demo — ingest + collect")
+    pi_repo = PostIntelligenceRepo(session)
+    intel_rows = pi_repo.list_for_run(run.id)
+    fmt_mix = _tally(row.format for row in intel_rows)
+    topic_mix = _tally(row.topic for row in intel_rows)
+    tfidf_terms = sum(
+        1 for row in intel_rows for kw in (row.keywords or []) if kw.get("source") == "tfidf"
+    )
+
+    print("\nEPIC-03 demo — ingest + collect + classify")
     print(f"  competitors ingested : {report.accepted_count}")
     print(f"  run id / period      : {run.id} / {period_days}d  (adapter={adapter.name})")
     print(f"  profiles collected   : {result.profiles_collected}")
@@ -73,8 +103,26 @@ def main() -> None:
         followers = prof.followers if prof else None
         status = "ok" if r.ok else f"FAILED: {r.error}"
         print(f"    - {r.name:<26} posts={r.posts_inserted:<3} followers={followers} {status}")
+    print(f"  posts classified     : {classify.posts_classified} / {classify.posts_total}")
+    print(f"  cache hits           : {classify.cache_hits}")
+    print(f"  classify errors      : {len(classify.errors)}")
+    print(f"  tfidf keywords merged: {tfidf_terms}")
+    print(f"  format mix           : {fmt_mix}")
+    print(f"  topic mix            : {topic_mix}")
+
+    reclassify = classify_posts_for_run(session, run_id=run.id, router=router, registry=registry)
+    session.commit()
+    print(f"  re-run reclassified  : {reclassify.posts_classified} (expect 0 — cache)")
+
     session.close()
     engine.dispose()
+
+
+def _tally(values) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in values:
+        counts[value] = counts.get(value, 0) + 1
+    return dict(sorted(counts.items(), key=lambda kv: -kv[1]))
 
 
 if __name__ == "__main__":

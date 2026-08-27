@@ -1,6 +1,7 @@
 """Repositories own every query. Feature code never touches SQLAlchemy directly.
 
-EPIC-01 ships CompetitorRepo and RunRepo; EPIC-02 adds ProfileRepo and PostRepo.
+EPIC-01 ships CompetitorRepo and RunRepo; EPIC-02 adds ProfileRepo and PostRepo;
+EPIC-03 adds PostIntelligenceRepo.
 """
 
 from datetime import datetime
@@ -8,9 +9,10 @@ from datetime import datetime
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.db.models import CompanyProfile, Competitor, Post, Run
+from app.db.models import CompanyProfile, Competitor, Post, PostIntelligence, Run
 from app.schemas.collection import CompanyProfile as CompanyProfileIn
 from app.schemas.collection import RawPost
+from app.schemas.intelligence import PostClassification
 
 
 class CompetitorRepo:
@@ -181,3 +183,84 @@ class PostRepo:
 
     def count_all(self) -> int:
         return self.session.scalar(select(func.count()).select_from(Post)) or 0
+
+
+class PostIntelligenceRepo:
+    """Derived per-post classification, keyed by ``post_id``; raw posts stay immutable.
+
+    Caching is prompt-version aware: a row is stale when its stored ``prompt_versions``
+    no longer matches the current registry versions, which forces reprocessing.
+    """
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def _row_for_post(self, post_id: int) -> PostIntelligence | None:
+        return self.session.scalar(
+            select(PostIntelligence).where(PostIntelligence.post_id == post_id)
+        )
+
+    def unclassified(self, run_id: int, prompt_versions: dict[str, int]) -> list[Post]:
+        """Posts in the run with no intelligence row, or a row from stale prompt versions."""
+        posts = list(
+            self.session.scalars(select(Post).where(Post.run_id == run_id).order_by(Post.id))
+        )
+        stale: list[Post] = []
+        for post in posts:
+            row = self._row_for_post(post.id)
+            if row is None or (row.prompt_versions or {}) != prompt_versions:
+                stale.append(post)
+        return stale
+
+    def upsert(
+        self,
+        post_id: int,
+        classification: PostClassification,
+        *,
+        hashtags: list[str],
+        prompt_versions: dict[str, int],
+    ) -> PostIntelligence:
+        fields = dict(
+            format=classification.format,
+            topic=classification.topic,
+            sub_topic=classification.sub_topic,
+            cta=classification.cta,
+            cta_text=classification.cta_text,
+            hashtags=list(hashtags),
+            keywords=[tag.model_dump() for tag in classification.keywords],
+            prompt_versions=dict(prompt_versions),
+        )
+        existing = self._row_for_post(post_id)
+        if existing:
+            for key, value in fields.items():
+                setattr(existing, key, value)
+            self.session.flush()
+            return existing
+        row = PostIntelligence(post_id=post_id, **fields)
+        self.session.add(row)
+        self.session.flush()
+        return row
+
+    def get(self, post_id: int) -> PostIntelligence | None:
+        return self._row_for_post(post_id)
+
+    def list_for_run(self, run_id: int) -> list[PostIntelligence]:
+        return list(
+            self.session.scalars(
+                select(PostIntelligence)
+                .join(Post, Post.id == PostIntelligence.post_id)
+                .where(Post.run_id == run_id)
+                .order_by(PostIntelligence.post_id)
+            )
+        )
+
+    def count_for_run(self, run_id: int) -> int:
+        return (
+            self.session.scalar(
+                select(func.count())
+                .select_from(PostIntelligence)
+                .join(Post, Post.id == PostIntelligence.post_id)
+                .where(Post.run_id == run_id)
+            )
+            or 0
+        )
