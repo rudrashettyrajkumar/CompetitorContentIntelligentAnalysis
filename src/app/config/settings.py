@@ -1,5 +1,6 @@
 """Application settings: env vars (secrets/runtime) + YAML config (app + models)."""
 
+import os
 from functools import lru_cache
 from pathlib import Path
 
@@ -7,7 +8,15 @@ import yaml
 from pydantic import BaseModel, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+# parents[3] assumes src/app/config/settings.py under the repo root — true for an
+# editable install (`make install`). A non-editable install (the Docker image)
+# puts this file under site-packages, so allow APP_ROOT to point at the tree that
+# holds config/ prompts/ frontend/.
+PROJECT_ROOT = (
+    Path(os.environ["APP_ROOT"]).resolve()
+    if os.environ.get("APP_ROOT")
+    else Path(__file__).resolve().parents[3]
+)
 CONFIG_DIR = PROJECT_ROOT / "config"
 PROMPTS_DIR = PROJECT_ROOT / "prompts"
 
