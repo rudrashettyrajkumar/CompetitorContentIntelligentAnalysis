@@ -2,11 +2,31 @@ import type { ReactNode } from "react";
 import { useRun } from "../runContext";
 import { Empty, ErrorBox, Loading } from "../components/ui";
 import type { QueryState } from "../hooks";
+import { SERIES } from "../components/charts";
 
-export function Page({ title, children }: { title: string; children: ReactNode }) {
+export function Page({
+  title,
+  eyebrow = "Intelligence",
+  description,
+  actions,
+  children,
+}: {
+  title: string;
+  eyebrow?: string;
+  description?: string;
+  actions?: ReactNode;
+  children: ReactNode;
+}) {
   return (
-    <div>
-      <h1 className="mb-4 text-xl font-semibold text-ink">{title}</h1>
+    <div className="animate-fade-up">
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <div className="h-eyebrow">{eyebrow}</div>
+          <h1 className="title-gradient mt-1 text-2xl font-bold sm:text-[1.75rem]">{title}</h1>
+          {description && <p className="mt-1 max-w-2xl text-sm text-muted">{description}</p>}
+        </div>
+        {actions}
+      </div>
       {children}
     </div>
   );
@@ -28,13 +48,4 @@ export function RunGate({
   return <>{children}</>;
 }
 
-export const CHART_COLORS = [
-  "#4f46e5",
-  "#0ea5e9",
-  "#10b981",
-  "#f59e0b",
-  "#ef4444",
-  "#8b5cf6",
-  "#14b8a6",
-  "#ec4899",
-];
+export const CHART_COLORS = SERIES;
