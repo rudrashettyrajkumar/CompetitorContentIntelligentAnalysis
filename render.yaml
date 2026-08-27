@@ -36,7 +36,7 @@ services:
       - key: LLM_FAKE_MODE
         value: "false"
       - key: SEED_DEMO
-        value: "false"
+        value: "true"                   # populate a fake-LLM demo run on first boot; no-op once the DB has data
       - key: LOG_LEVEL
         value: INFO
       - key: SCHEDULER_ENABLED
