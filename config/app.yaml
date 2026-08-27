@@ -1,0 +1,22 @@
+# Application configuration (non-secret). Secrets live in .env.
+collection:
+  adapter: mock            # mock | import | apify | playwright
+  period_days: 30          # 7 | 10 | 30 | 60 | 90
+  allow_scraping: false    # playwright adapter guard — see .env.example note
+
+llm:
+  batch_size: 10           # posts per classification call (quota economy)
+
+engagement:
+  weights:
+    reactions: 1
+    comments: 2
+    reposts: 3
+
+cross:                     # EPIC-05 thresholds
+  min_posts_per_cell: 3
+  emerging_keyword_growth: 2.0
+
+loop:                      # EPIC-08 thresholds
+  emerging_keyword_growth: 2.0
+  refresh_shift_threshold: 3

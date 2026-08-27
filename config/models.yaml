@@ -1,0 +1,27 @@
+# Model roster per tier and provider. Free model IDs rotate — edit here, never in code.
+# Provider order below IS the fallback order.
+provider_order: [openrouter, nvidia, groq]
+
+providers:
+  openrouter:
+    base_url: "https://openrouter.ai/api/v1"
+    api_key_env: OPENROUTER_API_KEY
+    rpm: 20
+  nvidia:
+    base_url: "https://integrate.api.nvidia.com/v1"
+    api_key_env: NVIDIA_API_KEY
+    rpm: 40
+  groq:
+    base_url: "https://api.groq.com/openai/v1"
+    api_key_env: GROQ_API_KEY
+    rpm: 30
+
+tiers:
+  fast:
+    openrouter: ["meta-llama/llama-3.3-70b-instruct:free", "google/gemini-2.0-flash-exp:free"]
+    nvidia: ["meta/llama-3.3-70b-instruct"]
+    groq: ["llama-3.3-70b-versatile"]
+  reasoning:
+    openrouter: ["deepseek/deepseek-chat-v3-0324:free", "deepseek/deepseek-r1:free"]
+    nvidia: ["deepseek-ai/deepseek-r1"]
+    groq: ["deepseek-r1-distill-llama-70b"]

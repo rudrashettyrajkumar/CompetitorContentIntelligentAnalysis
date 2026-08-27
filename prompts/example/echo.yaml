@@ -1,0 +1,8 @@
+name: echo
+version: 1
+description: Example prompt proving the registry + router pipeline end to end
+model_tier: fast
+temperature: 0.1
+output_schema: EchoResult
+batch: false
+variables: [message, language]
