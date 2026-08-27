@@ -10,7 +10,16 @@ from datetime import datetime
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.db.models import Campaign, CompanyProfile, Competitor, Post, PostIntelligence, Run
+from app.db.models import (
+    Campaign,
+    CompanyProfile,
+    Competitor,
+    Insight,
+    Post,
+    PostIntelligence,
+    Run,
+)
+from app.db.models import StrategyProfile as StrategyProfileRow
 from app.schemas.analysis import (
     CompetitorTopPosts,
     CtaPerformance,
@@ -486,4 +495,96 @@ class CampaignRepo:
                 select(func.count()).select_from(Campaign).where(Campaign.run_id == run_id)
             )
             or 0
+        )
+
+
+class StrategyProfileRepo:
+    """Per-competitor strategy profiles (EPIC-05), keyed by run. A re-run replaces the set."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def replace_for_run(self, run_id: int, profiles) -> list[StrategyProfileRow]:
+        """``profiles``: iterable of :class:`app.schemas.strategy_map.StrategyProfile`."""
+        for existing in self.session.scalars(
+            select(StrategyProfileRow).where(StrategyProfileRow.run_id == run_id)
+        ):
+            self.session.delete(existing)
+        self.session.flush()
+        created: list[StrategyProfileRow] = []
+        for profile in profiles:
+            row = StrategyProfileRow(
+                competitor_id=profile.competitor_id,
+                run_id=run_id,
+                primary_themes=list(profile.primary_themes),
+                content_mix=dict(profile.content_mix),
+                best_format=profile.best_format,
+                best_topic=profile.best_topic,
+                posting_frequency_per_week=profile.posting_frequency_per_week,
+                engagement_windows=list(profile.engagement_windows),
+                positioning_summary=profile.positioning_summary,
+            )
+            self.session.add(row)
+            created.append(row)
+        self.session.flush()
+        return created
+
+    def list_for_run(self, run_id: int) -> list[StrategyProfileRow]:
+        return list(
+            self.session.scalars(
+                select(StrategyProfileRow)
+                .where(StrategyProfileRow.run_id == run_id)
+                .order_by(StrategyProfileRow.competitor_id)
+            )
+        )
+
+    def count_for_run(self, run_id: int) -> int:
+        return (
+            self.session.scalar(
+                select(func.count())
+                .select_from(StrategyProfileRow)
+                .where(StrategyProfileRow.run_id == run_id)
+            )
+            or 0
+        )
+
+
+class InsightRepo:
+    """Run-keyed derived insight bundles (``insights`` table).
+
+    ``kind`` is one of: cross_competitor | top_content | strategy | opportunities |
+    calendar | period_diff | change_report. One row per (run, kind); writing replaces it.
+    """
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def put(self, run_id: int, kind: str, payload) -> Insight:
+        existing = self.session.scalar(
+            select(Insight).where(Insight.run_id == run_id, Insight.kind == kind)
+        )
+        if existing:
+            existing.payload = payload
+            existing.created_at = datetime.utcnow()
+            self.session.flush()
+            return existing
+        row = Insight(run_id=run_id, kind=kind, payload=payload)
+        self.session.add(row)
+        self.session.flush()
+        return row
+
+    def get(self, run_id: int, kind: str) -> Insight | None:
+        return self.session.scalar(
+            select(Insight).where(Insight.run_id == run_id, Insight.kind == kind)
+        )
+
+    def get_payload(self, run_id: int, kind: str):
+        row = self.get(run_id, kind)
+        return row.payload if row is not None else None
+
+    def list_for_run(self, run_id: int) -> list[Insight]:
+        return list(
+            self.session.scalars(
+                select(Insight).where(Insight.run_id == run_id).order_by(Insight.kind)
+            )
         )

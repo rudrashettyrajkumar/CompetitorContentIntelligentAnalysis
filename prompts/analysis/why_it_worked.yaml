@@ -1,0 +1,8 @@
+name: why_it_worked
+version: 1
+description: Break down why each top-performing competitor post landed (hook, structure, triggers, CTA)
+model_tier: reasoning
+temperature: 0.3
+output_schema: WhyItWorkedBatch
+batch: true
+variables: [posts]

@@ -60,14 +60,14 @@ Stored as `insights.kind = top_content`.
 
 ## Deliverables
 
-- [ ] `strategy_profile.py` + `prompts/analysis/positioning_summary.{yaml,md}` + repo +
+- [x] `strategy_profile.py` + `prompts/analysis/positioning_summary.{yaml,md}` + repo +
       tests on fixture data (hand-computed mix/frequency/windows)
-- [ ] `cross.py` + schemas + tests: seeded fixture where expected white space, opportunity
+- [x] `cross.py` + schemas + tests: seeded fixture where expected white space, opportunity
       topic, and a 2×-multiplier format opportunity are known in advance
-- [ ] `top_content.py` + `why_it_worked` prompt + tests (ranking strategy incl. missing
+- [x] `top_content.py` + `why_it_worked` prompt + tests (ranking strategy incl. missing
       follower data; batch analysis parse)
-- [ ] Graph wiring: `profiles → cross → top_content` stages
-- [ ] Keyword matrix quadrant logic + tests (frequency ≠ performance demonstrated)
+- [x] Graph wiring: `profiles → cross → top_content` stages
+- [x] Keyword matrix quadrant logic + tests (frequency ≠ performance demonstrated)
 
 ## Acceptance criteria
 
@@ -79,3 +79,29 @@ Stored as `insights.kind = top_content`.
    low-frequency/high-performance keyword in the correct quadrants.
 4. Top-20 report has 20 rows (or all posts if fewer) each with a WhyItWorked record.
 5. `make test` offline; `make demo` includes all EPIC-05 stages.
+
+## Implementation notes
+
+- **Separate graph, not an extension of the EPIC-04 graph.** `map_strategy_run`
+  (`src/app/analysis/mapping_graph.py`) compiles its own `profiles → cross → top_content`
+  StateGraph and is called after `analyze_run`. This keeps the EPIC-04 analysis graph and
+  its tests (which assert `run.stage == "campaigns"`) untouched. `demo.py` now calls both.
+- **`content_mix` groups** live in `config/app.yaml: format_groups` (group → list of
+  taxonomy formats); `AppConfig` gained `format_groups`, `strategy`, `company` fields.
+  Every configured group is always present in the mix (0.0 when empty) so the dashboard
+  has a stable key set; percentages sum to 100 ±rounding.
+- **`cross` thresholds** all live in `config/app.yaml: cross` (common/saturation/whitespace
+  competitor counts, format-opportunity multiplier + max share, keyword min frequency,
+  top-content size, why-it-worked batch size). Medians for the opportunity/quadrant splits
+  are computed over topics/keywords that clear the minimum-sample floor.
+- **Top-content ranking strategy** (documented in `top_content.py`): rank by
+  `engagement_rate` only when *every* scored post in the run has one, else by
+  `engagement_score`; the chosen key is recorded in `TopContentReport.ranked_by`. Mixing
+  the two keys per-post would let large-follower competitors dominate.
+- **Persistence:** `StrategyProfileRepo.replace_for_run` writes `strategy_profiles`;
+  `InsightRepo.put` writes one `insights` row per (run, kind) for `cross_competitor` and
+  `top_content` (payloads are `model_dump(mode="json")`). `InsightRepo` is the shared
+  home for every `insights.kind` used by EPIC-05/06/08.
+- **Offline:** `register_mapping_fakes` (`src/app/analysis/mapping_fakes.py`) supplies
+  deterministic `positioning_summary` and `why_it_worked` responders; wired into `demo.py`
+  and the test fixtures.

@@ -11,6 +11,8 @@ The demo rebuilds its SQLite database each run so the schema always matches the 
 from __future__ import annotations
 
 from app.analysis.graph import analyze_run
+from app.analysis.mapping_fakes import register_mapping_fakes
+from app.analysis.mapping_graph import map_strategy_run
 from app.config.settings import (
     PROJECT_ROOT,
     PROMPTS_DIR,
@@ -87,12 +89,17 @@ def main() -> None:
     registry = PromptRegistry(PROMPTS_DIR)
     fake_llm = FakeLLM()
     register_classification_fakes(fake_llm)
+    register_mapping_fakes(fake_llm)
     router = ModelRouter(settings, get_models_config(), fake_llm=fake_llm)
     classify = classify_posts_for_run(session, run_id=run.id, router=router, registry=registry)
     session.commit()
 
     # --- EPIC-04: score -> rank -> detect_campaigns (offline FakeCampaignAgent) ---
     analysis = analyze_run(session, run_id=run.id, router=router, registry=registry)
+    session.commit()
+
+    # --- EPIC-05: profiles -> cross -> top_content (offline mapping fakes) ---
+    mapping = map_strategy_run(session, run_id=run.id, router=router, registry=registry)
     run_repo.finish(run.id)
     session.commit()
 
@@ -140,6 +147,26 @@ def main() -> None:
             f"    - {row.name:<40} posts={len(row.post_ids or []):<3} "
             f"engagement={row.total_engagement:.0f}"
         )
+
+    print(f"  strategy profiles    : {len(mapping.profiles.profiles)}")
+    for prof in mapping.profiles.profiles:
+        print(
+            f"    - {prof.competitor:<26} themes={prof.primary_themes} "
+            f"best_fmt={prof.best_format} freq={prof.posting_frequency_per_week}/wk "
+            f"windows={prof.engagement_windows}"
+        )
+    ci = mapping.cross.insights
+    print(f"  common themes        : {[t.topic for t in ci.common_themes]}")
+    print(f"  white spaces         : {[(w.topic, w.reason) for w in ci.white_spaces][:6]}")
+    print(
+        f"  format opportunities : "
+        f"{[(f.format, f.engagement_multiplier) for f in ci.format_opportunities]}"
+    )
+    print(f"  keyword matrix       : {[(k.term, k.quadrant) for k in ci.keyword_matrix][:8]}")
+    tc = mapping.top_content.report
+    print(f"  top content ({tc.ranked_by}) : {len(tc.items)} rows")
+    for it in tc.items[:3]:
+        print(f"    #{it.rank} {it.competitor:<22} {it.why.summary}")
 
     reclassify = classify_posts_for_run(session, run_id=run.id, router=router, registry=registry)
     session.commit()

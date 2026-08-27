@@ -67,6 +67,9 @@ class AppConfig(BaseModel):
     campaigns: dict = {}
     cross: dict = {}
     loop: dict = {}
+    format_groups: dict = {}
+    strategy: dict = {}
+    company: dict = {}
 
 
 class Taxonomies(BaseModel):
