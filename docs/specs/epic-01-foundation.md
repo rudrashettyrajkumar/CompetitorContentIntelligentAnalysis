@@ -92,23 +92,23 @@ class PromptRegistry:
 
 ## Deliverables
 
-- [ ] `pyproject.toml` (deps: fastapi, uvicorn, langchain, langchain-openai, langgraph,
+- [x] `pyproject.toml` (deps: fastapi, uvicorn, langchain, langchain-openai, langgraph,
       deepagents, sqlalchemy, pydantic-settings, pandas, openpyxl, jinja2, structlog,
       tenacity, apscheduler, scikit-learn, pytest, httpx, ruff), `Makefile`
       (install/test/lint/run/demo), `.env.example`, `.gitignore`, `README.md` stub
-- [ ] `config/app.yaml`, `config/models.yaml`
-- [ ] `src/app/config/settings.py` + loader tests
-- [ ] `src/app/core/logging.py` (structlog JSON + console dev renderer)
-- [ ] `src/app/core/model_router.py` + `FakeLLM` + tests (fallback on 429 simulated,
+- [x] `config/app.yaml`, `config/models.yaml`
+- [x] `src/app/config/settings.py` + loader tests
+- [x] `src/app/core/logging.py` (structlog JSON + console dev renderer)
+- [x] `src/app/core/model_router.py` + `FakeLLM` + tests (fallback on 429 simulated,
       repair path, fake mode)
-- [ ] `src/app/core/prompt_registry.py` + example prompt `prompts/example/echo.{yaml,md}`
+- [x] `src/app/core/prompt_registry.py` + example prompt `prompts/example/echo.{yaml,md}`
       + tests (render, missing variable error, schema resolution)
-- [ ] `src/app/schemas/__init__.py` with schema registry mechanism + `EchoResult` example
-- [ ] `src/app/db/{engine,models,repos}.py` + tests (init, CRUD roundtrip on sqlite tmp)
-- [ ] `src/app/api/main.py` + health test (httpx ASGI client)
-- [ ] `Dockerfile` (multi-stage: frontend build stage placeholder + python runtime),
+- [x] `src/app/schemas/__init__.py` with schema registry mechanism + `EchoResult` example
+- [x] `src/app/db/{engine,models,repos}.py` + tests (init, CRUD roundtrip on sqlite tmp)
+- [x] `src/app/api/main.py` + health test (httpx ASGI client)
+- [x] `Dockerfile` (multi-stage: frontend build stage placeholder + python runtime),
       `docker-compose.yml`
-- [ ] git repo initialized with initial commit
+- [x] git repo initialized with initial commit
 
 ## Acceptance criteria
 
@@ -125,3 +125,14 @@ class PromptRegistry:
 ## Test plan
 
 Unit tests per module as above; no network anywhere (mock `httpx`/LangChain transports).
+
+## Implementation notes (2026-08-27)
+
+- Fallback is implemented as explicit iteration over `(provider, model)` attempts with
+  per-attempt tenacity retry, rather than LangChain `.with_fallbacks()` — this gives
+  per-provider retry policy, skip-on-missing-key, and logging of which provider served
+  the call, which `.with_fallbacks()` hides. Behavior matches the contract otherwise.
+- `LLMOutputError` (schema failure after repair) deliberately does NOT trigger provider
+  fallback, per contract, to avoid burning quota when the prompt itself is at fault.
+- `make demo` currently runs a foundation wiring check (registry → router → schema);
+  EPIC-02+ replace it with the full pipeline demo.
