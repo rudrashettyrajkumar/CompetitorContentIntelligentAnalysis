@@ -51,6 +51,9 @@ class Run(Base):
     status: Mapped[str] = mapped_column(String(20), default="pending")
     stage: Mapped[str | None] = mapped_column(String(50))
     error: Mapped[str | None] = mapped_column(Text)
+    stage_timings: Mapped[dict | None] = mapped_column(JSON, default=None)  # {stage: seconds}
+    trigger: Mapped[str] = mapped_column(String(20), default="manual")  # manual | scheduled
+    competitor_ids: Mapped[list | None] = mapped_column(JSON, default=None)  # filter used, if any
 
 
 class Post(Base):

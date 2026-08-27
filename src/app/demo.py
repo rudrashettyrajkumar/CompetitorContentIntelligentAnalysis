@@ -1,9 +1,10 @@
 """End-to-end demo entrypoint (`make demo`).
 
-Scope through EPIC-04: ingest the sample workbook, run a collect-only run with the mock
-adapter, run the LangGraph classification subgraph, then the analysis stage
-(``score -> rank -> detect_campaigns``). Later epics extend this to strategy. Fully
-offline — FakeLLM + FakeCampaignAgent, no network.
+Full pipeline offline (FakeLLM + every stage's fakes, no network): ingest the sample
+workbook → collect (mock adapter) → classify → score/rank/campaigns → strategy profiles /
+cross insights / top content → AI strategy (pillars, opportunities, 30-day calendar).
+Everything lands in the SQLite DB, so `make frontend && make run` (or `make dashboard`)
+then serves a fully populated dashboard at http://localhost:8000.
 
 The demo rebuilds its SQLite database each run so the schema always matches the code.
 """
@@ -107,7 +108,6 @@ def main() -> None:
 
     # --- EPIC-06: strategy -> opportunities -> calendar (offline FakeStrategyAgent) ---
     strategy = run_strategy_stage(session, run_id=run.id, router=router, registry=registry)
-    run_repo.finish(run.id)
     session.commit()
 
     profile_repo = ProfileRepo(session)
@@ -197,6 +197,13 @@ def main() -> None:
     reclassify = classify_posts_for_run(session, run_id=run.id, router=router, registry=registry)
     session.commit()
     print(f"  re-run reclassified  : {reclassify.posts_classified} (expect 0 — cache)")
+
+    run_repo.finish(run.id)  # mark completed last so results/exports routes serve this run
+    session.commit()
+    print(
+        f"\n  dashboard            : run `make frontend && make run` "
+        f"then open http://localhost:8000  (run #{run.id})"
+    )
 
     session.close()
     engine.dispose()

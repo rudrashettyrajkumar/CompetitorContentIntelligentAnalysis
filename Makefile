@@ -2,7 +2,7 @@ VENV := .venv
 PY := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 
-.PHONY: install test lint fmt run demo clean
+.PHONY: install test lint fmt run demo clean frontend dashboard
 
 install:
 	@test -d $(VENV) || python3 -m venv $(VENV)
@@ -23,6 +23,13 @@ fmt:
 
 run:
 	$(VENV)/bin/uvicorn app.api.main:app --reload --port 8000
+
+frontend:
+	cd frontend && npm ci && npm run build
+
+# Full local dashboard: fresh demo data + built SPA + server on :8000
+dashboard: demo frontend
+	LLM_FAKE_MODE=true $(VENV)/bin/uvicorn app.api.main:app --port 8000
 
 demo:
 	LLM_FAKE_MODE=true $(PY) -m app.demo

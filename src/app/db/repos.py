@@ -73,8 +73,21 @@ class RunRepo:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def create(self, *, period_days: int, adapter: str) -> Run:
-        run = Run(period_days=period_days, adapter=adapter, status="pending")
+    def create(
+        self,
+        *,
+        period_days: int,
+        adapter: str,
+        trigger: str = "manual",
+        competitor_ids: list[int] | None = None,
+    ) -> Run:
+        run = Run(
+            period_days=period_days,
+            adapter=adapter,
+            status="pending",
+            trigger=trigger,
+            competitor_ids=list(competitor_ids) if competitor_ids else None,
+        )
         self.session.add(run)
         self.session.flush()
         return run
@@ -84,6 +97,26 @@ class RunRepo:
 
     def list_all(self) -> list[Run]:
         return list(self.session.scalars(select(Run).order_by(Run.started_at.desc())))
+
+    def latest_completed(self, before_run_id: int | None = None) -> Run | None:
+        stmt = select(Run).where(Run.status == "completed")
+        if before_run_id is not None:
+            stmt = stmt.where(Run.id < before_run_id)
+        return self.session.scalars(stmt.order_by(Run.id.desc())).first()
+
+    def any_in_progress(self) -> Run | None:
+        return self.session.scalars(
+            select(Run).where(Run.status.in_(("pending", "running"))).order_by(Run.id.desc())
+        ).first()
+
+    def record_timing(self, run_id: int, stage: str, seconds: float) -> None:
+        run = self.session.get(Run, run_id)
+        if run is None:
+            raise ValueError(f"Unknown run {run_id}")
+        timings = dict(run.stage_timings or {})
+        timings[stage] = round(seconds, 3)
+        run.stage_timings = timings
+        self.session.flush()
 
     def set_stage(self, run_id: int, stage: str) -> None:
         run = self.session.get(Run, run_id)

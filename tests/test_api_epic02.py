@@ -84,20 +84,52 @@ async def test_upload_missing_columns_is_400(client):
     assert "LinkedIn URL" in resp.json()["detail"]
 
 
-async def test_collect_run_persists_and_dedupes(client):
+async def _wait_for_run(client, run_id, timeout=60.0):
+    import asyncio
+
+    deadline = asyncio.get_event_loop().time() + timeout
+    while asyncio.get_event_loop().time() < deadline:
+        body = (await client.get(f"/api/runs/{run_id}")).json()
+        if body["status"] in ("completed", "failed"):
+            return body
+        await asyncio.sleep(0.05)
+    raise AssertionError(f"run {run_id} did not finish in {timeout}s")
+
+
+async def test_pipeline_run_completes_and_dedupes(client):
+    # EPIC-07: POST /api/runs is now async — 202 + background pipeline (was collect-only 200).
     await _upload(client, SAMPLE.read_bytes())
 
     first = await client.post("/api/runs", json={"period_days": 90})
-    assert first.status_code == 200
-    body = first.json()
-    assert body["status"] == "completed"
-    assert body["adapter"] == "mock"
-    assert body["profiles_collected"] == 5
-    assert body["posts_inserted"] > 0
-    assert all(c["ok"] for c in body["competitors"])
+    assert first.status_code == 202
+    run_id = first.json()["id"]
+    assert first.json()["status"] in ("pending", "running")
+
+    done = await _wait_for_run(client, run_id)
+    assert done["status"] == "completed", done["error"]
+    assert set(done["stage_timings"]) >= {"collect", "classify", "analyze", "map", "strategy"}
+
+    summary = (await client.get(f"/api/results/{run_id}/summary")).json()
+    assert summary["competitors_analyzed"] == 5
+    assert summary["total_posts"] > 0
 
     second = await client.post("/api/runs", json={"period_days": 90})
-    assert second.json()["posts_inserted"] == 0
+    second_id = second.json()["id"]
+    await _wait_for_run(client, second_id)
+    # global URL dedup: the second run collects nothing new
+    assert (await client.get(f"/api/results/{second_id}/summary")).json()["total_posts"] == 0
+
+
+async def test_results_before_completion_is_409(client):
+    await _upload(client, SAMPLE.read_bytes())
+    run_id = (await client.post("/api/runs", json={"period_days": 30})).json()["id"]
+    early = await client.get(f"/api/results/{run_id}/summary")
+    # either the pipeline hasn't finished (409) or it already has (200) — both are valid,
+    # but a still-processing run must never 500
+    assert early.status_code in (200, 409)
+    if early.status_code == 409:
+        assert early.json()["status"] == 409
+    await _wait_for_run(client, run_id)
 
 
 async def test_run_rejects_bad_period(client):
