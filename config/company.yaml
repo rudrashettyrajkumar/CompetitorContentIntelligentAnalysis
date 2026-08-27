@@ -1,0 +1,20 @@
+# Our company's profile — the content strategy (EPIC-06) is generated FOR this company.
+# These are sample values; replace with your own. Loaded by get_company_context().
+name: Northwind Labs
+industry: B2B SaaS — data & workflow automation
+services:
+  - workflow automation platform
+  - integration and onboarding services
+  - analytics and reporting add-ons
+  - customer success and enablement programs
+target_audience: >-
+  operations and RevOps leaders at mid-market B2B companies (200-2000 employees) who
+  are consolidating point tools and want measurable process efficiency
+differentiators:
+  - fastest time-to-value in the category (days, not quarters)
+  - transparent usage-based pricing with no seat minimums
+  - opinionated templates built from real customer workflows
+  - strong analytics layer — every automation is measurable
+tone: >-
+  practical, evidence-led, and generous with specifics; confident without hype; speaks
+  operator-to-operator, not vendor-to-prospect

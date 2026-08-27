@@ -37,6 +37,8 @@ from app.db.repos import (
 from app.input.excel import ingest_excel
 from app.intelligence.fakes import register_classification_fakes
 from app.intelligence.graph import classify_posts_for_run
+from app.strategy.fakes import register_strategy_fakes
+from app.strategy.graph import run_strategy_stage
 
 SAMPLE_XLSX = PROJECT_ROOT / "data" / "input" / "sample_competitors.xlsx"
 
@@ -90,6 +92,7 @@ def main() -> None:
     fake_llm = FakeLLM()
     register_classification_fakes(fake_llm)
     register_mapping_fakes(fake_llm)
+    register_strategy_fakes(fake_llm)
     router = ModelRouter(settings, get_models_config(), fake_llm=fake_llm)
     classify = classify_posts_for_run(session, run_id=run.id, router=router, registry=registry)
     session.commit()
@@ -100,6 +103,10 @@ def main() -> None:
 
     # --- EPIC-05: profiles -> cross -> top_content (offline mapping fakes) ---
     mapping = map_strategy_run(session, run_id=run.id, router=router, registry=registry)
+    session.commit()
+
+    # --- EPIC-06: strategy -> opportunities -> calendar (offline FakeStrategyAgent) ---
+    strategy = run_strategy_stage(session, run_id=run.id, router=router, registry=registry)
     run_repo.finish(run.id)
     session.commit()
 
@@ -167,6 +174,25 @@ def main() -> None:
     print(f"  top content ({tc.ranked_by}) : {len(tc.items)} rows")
     for it in tc.items[:3]:
         print(f"    #{it.rank} {it.competitor:<22} {it.why.summary}")
+
+    sb = strategy.bundle
+    print(f"  content pillars      : {[p.name for p in sb.strategy.pillars]}")
+    print(f"  content mix          : {sb.strategy.content_mix}")
+    print(
+        f"  recommended formats  : {[(r.format, r.share) for r in sb.strategy.recommended_formats]}"
+    )
+    print(f"  opportunities        : {len(sb.opportunities)}")
+    for op in sb.opportunities[:3]:
+        print(
+            f"    - {op.topic:<22} signal={op.competitor_signal}/{op.competition_level}/"
+            f"{op.engagement_potential} :: {op.hook[:60]}"
+        )
+    drops = [c for c in sb.originality_checks if c.verdict.startswith(("rejected", "dropped"))]
+    print(f"  originality checks    : {len(sb.originality_checks)} ({len(drops)} rejected/dropped)")
+    cal_status = (
+        "VALID" if strategy.calendar_valid else "INVALID: " + "; ".join(strategy.calendar_errors)
+    )
+    print(f"  calendar             : {len(sb.calendar.entries)} entries / {cal_status}")
 
     reclassify = classify_posts_for_run(session, run_id=run.id, router=router, registry=registry)
     session.commit()

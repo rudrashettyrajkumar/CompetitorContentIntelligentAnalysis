@@ -38,6 +38,22 @@ cross:                     # EPIC-05 thresholds
   top_content_size: 20           # Top-N content report size
   why_it_worked_batch: 5         # posts per why_it_worked LLM call
 
+strategy:                  # EPIC-06 AI strategy layer
+  pillars_min: 4
+  pillars_max: 6
+  opportunities_min: 8
+  opportunities_max: 12
+  calendar_days: 30
+  originality_ngram: 6            # n-gram size for the deterministic overlap check
+  originality_max_overlap: 0.30   # reject a hook/angle/message above this overlap ratio
+  originality_regen_attempts: 1   # regenerate a rejected item this many times before dropping
+  mix_tolerance_pct: 10           # calendar mix must land within +/- this of the recommended mix
+  # signal derivation cut-offs (the LLM proposes, the code stamps these three fields)
+  signal_topic_share_high: 0.15   # topic post-share >= => competitor_signal "high"
+  signal_topic_share_med: 0.05    # ... >= => "medium", else "low"
+  competition_competitors_high: 3 # topic covered by >= this many competitors => "high"
+  competition_competitors_med: 2  # ... >= => "medium", else "low"
+
 loop:                      # EPIC-08 thresholds
   emerging_keyword_growth: 2.0
   refresh_shift_threshold: 3

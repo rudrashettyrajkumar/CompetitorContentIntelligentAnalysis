@@ -67,16 +67,18 @@ auditable.
 
 ## Deliverables
 
-- [ ] `config/company.yaml` + settings plumbing
-- [ ] `schemas/strategy.py` + registry entries
-- [ ] `generator.py` deep agent (+ offline scripted stub for fake mode)
-- [ ] 4 strategy prompt packs + render/parse tests
-- [ ] `originality.py` + tests: a planted near-copy of a competitor post is rejected by
-      the n-gram check; regeneration path covered
-- [ ] Signal-stamping derivation rules + tests
-- [ ] Graph wiring: `strategy → opportunities → calendar` stages; persistence as
+- [x] `config/company.yaml` + settings plumbing (`get_company_context` / `CompanyContext`)
+- [x] `schemas/strategy.py` + registry entries
+- [x] `generator.py` deep agent (`DeepStrategyAgent`) + offline scripted stub
+      (`FakeStrategyAgent`)
+- [x] 5 strategy prompt packs (pillars, opportunities, calendar, originality_check,
+      regenerate_field) + render/parse tests
+- [x] `originality.py` + tests: a planted near-copy of a competitor post is rejected by
+      the n-gram check; LLM-layer catch; regeneration path covered
+- [x] Signal-stamping derivation rules + tests (incl. "agent lies, data wins")
+- [x] Graph wiring: `strategy → opportunities → calendar` stages; persistence as
       `insights.kind = strategy | opportunities | calendar`
-- [ ] Calendar validation: 30 consecutive days, entries only on cadence days, every
+- [x] Calendar validation: 30 consecutive days, entries only on cadence days, every
       entry maps to a pillar, mix within ±10% of the recommended mix
 
 ## Acceptance criteria
@@ -89,3 +91,38 @@ auditable.
 3. Signal fields (competitor_signal / competition_level / engagement_potential) are
    reproducibly derived from data, not free LLM output (test asserts derivation).
 4. `make test` offline; `make demo` produces the complete strategy bundle.
+
+## Implementation notes
+
+- **Own LangGraph, run after the EPIC-05 mapping stage.** `run_strategy_stage`
+  (`src/app/strategy/graph.py`) compiles a `strategy → opportunities → calendar`
+  StateGraph; each node sets `run.stage`, runs a step from `strategy/generator.py`, and
+  writes one `insights` row (`strategy`, `opportunities`, `calendar`). `generate_strategy`
+  in `generator.py` composes the same steps without persistence for direct callers/tests.
+- **Agents.** `FakeStrategyAgent` derives a fully valid, schema-conformant bundle straight
+  from `StrategyInputs` (offline, zero quota) and is what tests + demo use.
+  `DeepStrategyAgent` runs one deepagents pass per step (`reasoning` tier) over the
+  EPIC-05 intelligence as virtual files, falling back to `router.invoke` on error — same
+  pattern as `DeepCampaignAgent`.
+- **`StrategyInputs`** (`strategy/inputs.py`) is assembled once per run: company context,
+  EPIC-05 profiles (from `strategy_profiles`), cross + top-content (re-hydrated from
+  `insights`), campaign records, every raw post body (for the guard), and `topic_stats`
+  (per-topic volume / coverage / engagement + cross quadrant flags).
+- **Signal stamping** (`strategy/derivation.py`): `competitor_signal` ← topic post-share,
+  `competition_level` ← competitor coverage count, `engagement_potential` ← quadrant
+  flags / above-median engagement. The agent fills these fields but the code overwrites
+  them from `topic_stats` so they are reproducible. Cut-offs in `config: strategy`.
+- **Originality guard** (`strategy/originality.py`): layer 1 is a normalized n-gram
+  overlap ratio (n + threshold in `config: strategy`; short texts fall back to k<n grams);
+  layer 2 is the batched `originality_check` LLM judge. A rejected `hook`/`angle`/
+  `key_message` is regenerated once via a `regenerate` callback (the agent's
+  `regenerate_field`); if it still fails, the whole opportunity is dropped. Every
+  decision is an `OriginalityCheck`, persisted under the `opportunities` insight.
+- **Calendar validation** (`strategy/calendar_check.py`) is deterministic and also gates
+  the fake agent's own output — `FakeStrategyAgent.calendar` builds a Mon-anchored 30-day
+  grid on the cadence weekdays with pillars allocated by largest-remainder against
+  `content_mix`, so it passes its own validator.
+- Added a 5th prompt pack, `regenerate_field` (schema `RegeneratedField`), for the deep
+  agent's single-field regeneration — the 4 in the spec plus this.
+- `AppConfig` already carried `strategy` (added in EPIC-05); `company` field is unused so
+  far (company profile is its own `config/company.yaml`).

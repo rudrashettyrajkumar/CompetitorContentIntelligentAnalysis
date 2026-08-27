@@ -30,4 +30,5 @@ class EchoResult(BaseModel):
 # (``output_schema: <Name>``) resolves at PromptRegistry load time.
 from app.schemas import analysis as _analysis  # noqa: E402,F401
 from app.schemas import intelligence as _intelligence  # noqa: E402,F401
+from app.schemas import strategy as _strategy  # noqa: E402,F401
 from app.schemas import strategy_map as _strategy_map  # noqa: E402,F401
