@@ -1,0 +1,47 @@
+# Fly.io deployment — single machine + volume (matches SQLite's single-writer model).
+# Do NOT scale this app past 1 machine: the API runs APScheduler in-process and
+# writes SQLite on an attached volume. `fly scale count 2` will corrupt state.
+#
+# First deploy:
+#   fly launch --no-deploy --copy-config --name <your-app-name> --region <region>
+#   fly volumes create cci_data --size 1 --region <region> --yes
+#   fly secrets set OPENROUTER_API_KEY=... NVIDIA_API_KEY=... GROQ_API_KEY=...
+#   fly deploy --remote-only
+# Later deploys: just `fly deploy --remote-only`
+
+app = "competitor-intelligence"        # change to a globally-unique name
+primary_region = "iad"                 # change: fly platform regions
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  LLM_FAKE_MODE = "false"
+  SEED_DEMO = "false"                   # don't seed the fake-LLM demo run in prod
+  LOG_LEVEL = "INFO"
+  DATABASE_URL = "sqlite:////data/app.db"   # 4 slashes = absolute path on the volume
+  SCHEDULER_ENABLED = "true"           # in-process APScheduler; works here (machine stays up)
+  # To use managed Postgres instead of the volume, drop [[mounts]] and set:
+  #   fly secrets set DATABASE_URL='postgresql://...'   (scheme normalized in build_engine)
+
+[[mounts]]
+  source = "cci_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_start_machines = true
+  auto_stop_machines = "off"            # keep 1 machine always up for APScheduler
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/api/health"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "15s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"                        # langchain+langgraph+sklearn import + a run; 512mb OOMs
