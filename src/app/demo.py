@@ -1,14 +1,16 @@
 """End-to-end demo entrypoint (`make demo`).
 
-Scope through EPIC-03: ingest the sample workbook, run a collect-only run with the mock
-adapter, then run the LangGraph classification subgraph over the collected posts. Later
-epics extend this to scoring / campaigns / strategy. Fully offline — FakeLLM, no network.
+Scope through EPIC-04: ingest the sample workbook, run a collect-only run with the mock
+adapter, run the LangGraph classification subgraph, then the analysis stage
+(``score -> rank -> detect_campaigns``). Later epics extend this to strategy. Fully
+offline — FakeLLM + FakeCampaignAgent, no network.
 
 The demo rebuilds its SQLite database each run so the schema always matches the code.
 """
 
 from __future__ import annotations
 
+from app.analysis.graph import analyze_run
 from app.config.settings import (
     PROJECT_ROOT,
     PROMPTS_DIR,
@@ -23,7 +25,13 @@ from app.datasources.base import get_datasource, resolve_period_days
 from app.datasources.collector import collect_for_run
 from app.db.engine import build_engine, build_session_factory, init_db
 from app.db.models import Base
-from app.db.repos import CompetitorRepo, PostIntelligenceRepo, ProfileRepo, RunRepo
+from app.db.repos import (
+    CampaignRepo,
+    CompetitorRepo,
+    PostIntelligenceRepo,
+    ProfileRepo,
+    RunRepo,
+)
 from app.input.excel import ingest_excel
 from app.intelligence.fakes import register_classification_fakes
 from app.intelligence.graph import classify_posts_for_run
@@ -81,6 +89,10 @@ def main() -> None:
     register_classification_fakes(fake_llm)
     router = ModelRouter(settings, get_models_config(), fake_llm=fake_llm)
     classify = classify_posts_for_run(session, run_id=run.id, router=router, registry=registry)
+    session.commit()
+
+    # --- EPIC-04: score -> rank -> detect_campaigns (offline FakeCampaignAgent) ---
+    analysis = analyze_run(session, run_id=run.id, router=router, registry=registry)
     run_repo.finish(run.id)
     session.commit()
 
@@ -93,7 +105,7 @@ def main() -> None:
         1 for row in intel_rows for kw in (row.keywords or []) if kw.get("source") == "tfidf"
     )
 
-    print("\nEPIC-03 demo — ingest + collect + classify")
+    print("\nEPIC-04 demo — ingest + collect + classify + score + campaigns")
     print(f"  competitors ingested : {report.accepted_count}")
     print(f"  run id / period      : {run.id} / {period_days}d  (adapter={adapter.name})")
     print(f"  profiles collected   : {result.profiles_collected}")
@@ -109,6 +121,25 @@ def main() -> None:
     print(f"  tfidf keywords merged: {tfidf_terms}")
     print(f"  format mix           : {fmt_mix}")
     print(f"  topic mix            : {topic_mix}")
+
+    print(f"  posts scored         : {analysis.score.posts_scored}")
+    print(f"  with engagement rate : {analysis.score.with_rate}")
+    print(f"  incomplete metrics   : {analysis.score.incomplete_metrics}")
+    top = analysis.rankings.top_posts[:3]
+    for tp in top:
+        rate = f"{tp.engagement_rate:.2f}%" if tp.engagement_rate is not None else "n/a"
+        print(f"    top post  score={tp.engagement_score:<9.0f} rate={rate:<7} {tp.url}")
+    print("  format performance   : Format | Posts | Avg engagement | Best post")
+    for fp in analysis.rankings.top_formats[:5]:
+        print(f"    {fp.format:<20} {fp.posts:<5} {fp.avg_engagement:<14.0f} {fp.best_post}")
+    print(f"  campaigns proposed   : {analysis.campaigns.proposed}")
+    print(f"  campaigns persisted  : {analysis.campaigns.persisted}")
+    print(f"  campaigns dropped    : {len(analysis.campaigns.dropped)}")
+    for row in CampaignRepo(session).list_for_run(run.id)[:5]:
+        print(
+            f"    - {row.name:<40} posts={len(row.post_ids or []):<3} "
+            f"engagement={row.total_engagement:.0f}"
+        )
 
     reclassify = classify_posts_for_run(session, run_id=run.id, router=router, registry=registry)
     session.commit()
