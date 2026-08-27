@@ -3,6 +3,11 @@ collection:
   adapter: mock            # mock | import | apify | playwright
   period_days: 30          # 7 | 10 | 30 | 60 | 90
   allow_scraping: false    # playwright adapter guard — see .env.example note
+  apify:                   # only used when adapter: apify (token from APIFY_TOKEN env)
+    base_url: https://api.apify.com/v2
+    profile_actor: dev_fusion/linkedin-company-detail
+    posts_actor: apimaestro/linkedin-company-posts
+    posts_limit: 200
 
 llm:
   batch_size: 10           # posts per classification call (quota economy)
