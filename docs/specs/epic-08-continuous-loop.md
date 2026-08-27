@@ -56,15 +56,20 @@ emerging keywords and shifts visualized (delta bars).
 
 ## Deliverables
 
-- [ ] `schedules` table + repo + APScheduler wiring with lifespan + overlap guard
-- [ ] Schedule API routes + tests (create/list/delete, invalid cron rejected)
-- [ ] `diff.py` + schemas + tests on two seeded runs with planted changes (new campaign,
-      2× keyword, topic performance shift) — all detected; below-threshold noise ignored
-- [ ] `change_report` prompt + generation + `Notifier`/`LogNotifier`
-- [ ] Auto strategy refresh path + test
-- [ ] Frontend: schedule panel + "What changed" card + delta visuals
-- [ ] Docs: `README.md` section on operating the loop; solution-design cross-check pass
-      (fix any drift between docs and implementation across all epics)
+- [x] `schedules` table + `ScheduleRepo` + `SchedulerService` (AsyncIOScheduler) wired to
+      the FastAPI lifespan + overlap guard (`RunRepo.any_in_progress`)
+- [x] Schedule API routes (`POST`/`GET`/`DELETE /api/schedule`) + tests (CRUD, invalid
+      cron → 422, default cron from config)
+- [x] `scheduler/diff.py` + `schemas/loop.py` + tests on two seeded runs with planted
+      changes (new campaign, 2× keyword, topic performance shift, profile change) — all
+      detected; below-threshold noise ignored; thresholds configurable
+- [x] `change_report` prompt + `scheduler/change_report.py` (LLM + deterministic
+      fallback) + `Notifier` protocol / `LogNotifier`
+- [x] Auto strategy refresh path (`scheduler/loop.py`) + tests (material → refresh; quiet → not)
+- [x] Frontend: schedule panel (Runs page), "What changed" card + emerging-keyword /
+      topic-shift delta bars (Overview page)
+- [x] Docs: `README.md` "Operating the continuous loop" section; solution-design +
+      CLAUDE.md cross-check pass
 
 ## Acceptance criteria
 
@@ -76,3 +81,30 @@ emerging keywords and shifts visualized (delta bars).
 4. Overlap guard: trigger during an active run skips with a logged reason.
 5. Dashboard shows schedule management and the change card. `make test` offline;
    `make demo` unaffected.
+
+## Implementation notes
+
+- **Loop step is part of the pipeline.** `run_pipeline` runs a final `loop` stage
+  (`scheduler/loop.py::run_loop_step`) after `strategy`: it diffs against
+  `RunRepo.latest_completed(before_run_id=…)`, persists `period_diff` + `change_report`,
+  notifies, and — if `strategy_refresh_recommended` — re-runs `run_strategy_stage` for the
+  current run (recording the pre-refresh pillars in the change-report payload). No baseline
+  ⇒ no-op, so `make demo` (single run) is unaffected. This means *any* run with a prior
+  completed run produces a diff, not only scheduled ones — a deliberate widening of the
+  spec ("scheduled or manually flagged") so two runs surface the dashboard card without a
+  schedule.
+- **`SchedulerService`** owns an `AsyncIOScheduler`, started from the FastAPI lifespan
+  (`settings.scheduler_enabled`, default on; set `SCHEDULER_ENABLED=false` to skip — used
+  by the schedule API tests). `cron` accepts a 5-field crontab **or** `@every <n>s`
+  (`IntervalTrigger`) for tight cadences / the APScheduler integration test. The job body
+  applies the overlap guard, creates a `trigger='scheduled'` run, sets
+  `schedules.last_run_id`, and runs the pipeline in a worker thread.
+- **`runs.stages`** (API) and the frontend progress bar now list six stages ending in
+  `loop`.
+- **Frontend** additions live in existing EPIC-07 files: `SchedulePanel` in
+  `pages/Runs.tsx` (auto-hides if `/api/schedule` 404s — no longer does), "What changed"
+  card + `DeltaBars` in `pages/Overview.tsx`, `diff`/`Schedule` types in `types.ts`.
+- **Cross-check fixes:** `docs/solution-design.md` §6 (runs columns, `insights.kind` list
+  incl. `change_report`, `schedules` table), §9 (async `POST /api/runs`, `diff` results
+  route, error codes), §10 (loop mechanics); `CLAUDE.md` layout line dropped the
+  never-created `graph/` dir.

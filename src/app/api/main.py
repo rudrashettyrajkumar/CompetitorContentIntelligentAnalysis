@@ -26,7 +26,16 @@ async def lifespan(app: FastAPI):
     init_db(engine)
     app.state.engine = engine
     app.state.session_factory = build_session_factory(engine)
-    app.state.scheduler = None  # populated by EPIC-08 if scheduling is enabled
+    app.state.scheduler = None
+    if getattr(settings, "scheduler_enabled", True):
+        try:
+            from app.scheduler.service import SchedulerService
+
+            svc = SchedulerService(app.state.session_factory)
+            svc.start()
+            app.state.scheduler = svc
+        except Exception as exc:  # noqa: BLE001 — a scheduler failure must not block the API
+            log.warning("scheduler_start_failed", error=str(exc))
     log.info("app_started", database=settings.database_url, fake_llm=settings.llm_fake_mode)
     try:
         yield

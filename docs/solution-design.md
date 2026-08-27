@@ -37,13 +37,14 @@ period-over-period comparison, and strategy updates.
                                      ▼                            ▼
 ┌──────────┐   ┌───────────┐   ┌──────────────────────────┐   ┌──────────────┐
 │  Excel   │──►│  Input    │──►│  LangGraph Pipeline       │   │ React SPA    │
-│  upload  │   │  Layer    │   │  (src/app/graph)          │   │ (frontend/)  │
+│  upload  │   │  Layer    │   │  (per-stage LangGraphs;   │   │ (frontend/)  │
 └──────────┘   └───────────┘   │                           │   └──────────────┘
                                │ collect ► enrich ► classify│
                                │ ► score ► campaigns ►      │
                                │ profiles ► cross-compare ► │
                                │ top-content ► strategy ►   │
-                               │ opportunities ► calendar   │
+                               │ opportunities ► calendar ► │
+                               │ loop-diff                  │
                                └─────┬──────────────┬───────┘
                                      │              │
                           ┌──────────▼───┐   ┌──────▼─────────┐
@@ -147,9 +148,11 @@ render time and that `output_schema` resolves to a registered Pydantic model.
 - `posts` — competitor_id, run_id, posted_at, url (unique), content, raw_format, reactions, comments, reposts, source_adapter
 - `post_intelligence` — post_id, format, topic, sub_topic, cta, hashtags (JSON), keywords (JSON), engagement_score, engagement_rate, prompt_versions (JSON)
 - `campaigns` — competitor_id, run_id, name, theme, objective, post_ids (JSON), start/end, formats, keywords, hashtags, cta, audience, total_engagement, top_post_id
-- `runs` — id, started_at, period_days, adapter, status, stage, error
+- `runs` — id, started_at, finished_at, period_days, adapter, status, stage, error,
+  stage_timings (JSON `{stage: seconds}`), trigger (`manual` | `scheduled`), competitor_ids (JSON)
 - `strategy_profiles` — competitor_id, run_id, themes, content_mix, best_format, best_topic, cadence, engagement_windows (all JSON)
-- `insights` — run_id, kind (cross_competitor | top_content | strategy | opportunities | calendar | period_diff), payload (JSON)
+- `insights` — run_id, kind (`cross_competitor` | `top_content` | `strategy` | `opportunities` | `calendar` | `period_diff` | `change_report`), payload (JSON); one row per (run, kind)
+- `schedules` — cron, period_days, adapter, enabled, last_run_id (EPIC-08)
 
 Everything downstream of collection is derived data keyed by `run_id`, so periods can be
 compared and re-analysis never mutates raw posts.
@@ -196,9 +199,11 @@ Everything else is plain LangGraph nodes — cheaper, deterministic, easier to t
 - `GET  /api/competitors` — list with status
 - `POST /api/runs` — start pipeline (body: period_days, adapter, competitor filter); runs in background
 - `GET  /api/runs/{id}` — status incl. current graph stage
-- `GET  /api/results/{run_id}/…` — `summary | posts | formats | topics | keywords | campaigns | profiles | cross | top-content | strategy | opportunities | calendar`
+- `POST /api/runs` — 202 + run id; the full pipeline runs in a background worker thread
+- `GET  /api/runs` / `GET /api/runs/{id}` — status, current stage, per-stage timings, errors
+- `GET  /api/results/{run_id}/…` — `summary | posts | formats | topics | ctas | keywords | campaigns | profiles | cross | top-content | strategy | opportunities | calendar | diff` (404 unknown run, 409 while processing, RFC 7807 bodies)
 - `GET  /api/exports/{run_id}.xlsx|.json` — full intelligence workbook / bundle
-- `POST /api/schedule` / `GET /api/schedule` — recurring loop config
+- `POST /api/schedule` / `GET /api/schedule` / `DELETE /api/schedule/{id}` — recurring loop config
 - `GET  /api/health`
 
 React SPA (Vite build) served at `/` via `StaticFiles`; dashboards: KPI header,
@@ -207,11 +212,19 @@ opportunities, calendar view.
 
 ## 10. Continuous Intelligence Loop (Step 14)
 
-APScheduler job (cron, default weekly) → new run → after completion a **diff stage**
-compares against the previous run: new posts, new campaigns, emerging keywords
-(frequency delta), topic performance shifts, profile changes → stored as
-`insights.kind = period_diff` and surfaced on the dashboard; strategy regeneration is
-triggered when drift exceeds configurable thresholds.
+APScheduler (`AsyncIOScheduler`, started with the FastAPI lifespan) job (cron, default
+weekly; `@every Ns` interval form for tight cadences/tests) → new `trigger='scheduled'`
+run, skipped with a log line if a run is already in progress (overlap guard) → after
+completion the pipeline's **loop step** (`src/app/scheduler/`) diffs against the previous
+completed run: new/ended campaigns, emerging/fading keywords, topic & format engagement
+shifts, per-competitor profile changes → `insights.kind = period_diff`. A reasoning-tier
+`change_report` prompt turns the diff into a short narrative (`insights.kind =
+change_report`), pushed through a `Notifier` (`LogNotifier` default; email/Slack out of
+scope). When the material-change count crosses `loop.refresh_shift_threshold`, the EPIC-06
+strategy stage re-runs automatically for the new run and the report records the
+pre-refresh pillars. All thresholds live in `config/app.yaml: loop`. The diff step also
+runs after any manual run that has a prior completed run, so two `make`/UI runs surface a
+"What changed" card without a schedule.
 
 ## 11. Epics
 

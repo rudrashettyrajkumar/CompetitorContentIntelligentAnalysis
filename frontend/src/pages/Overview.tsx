@@ -74,6 +74,28 @@ export default function Overview() {
                 Strategy refresh recommended: {diff.data.diff.refresh_reasons.join("; ")}
               </p>
             )}
+            <div className="mt-3 grid gap-4 md:grid-cols-2">
+              {diff.data.diff.emerging_keywords.length > 0 && (
+                <DeltaBars
+                  title="Emerging keywords (before → after)"
+                  data={diff.data.diff.emerging_keywords.map((k) => ({
+                    label: k.term,
+                    before: k.before,
+                    after: k.after,
+                  }))}
+                />
+              )}
+              {diff.data.diff.topic_performance_shifts.length > 0 && (
+                <DeltaBars
+                  title="Topic engagement shifts"
+                  data={diff.data.diff.topic_performance_shifts.map((t) => ({
+                    label: t.topic,
+                    before: t.before,
+                    after: t.after,
+                  }))}
+                />
+              )}
+            </div>
           </div>
         )}
 
@@ -95,6 +117,30 @@ export default function Overview() {
         </div>
       </RunGate>
     </Page>
+  );
+}
+
+function DeltaBars({
+  title,
+  data,
+}: {
+  title: string;
+  data: { label: string; before: number; after: number }[];
+}) {
+  return (
+    <div>
+      <div className="mb-1 text-xs font-medium text-indigo-900">{title}</div>
+      <ResponsiveContainer width="100%" height={Math.max(120, data.length * 34)}>
+        <BarChart data={data.slice(0, 6)} layout="vertical" margin={{ left: 10 }}>
+          <XAxis type="number" hide />
+          <YAxis type="category" dataKey="label" width={90} tick={{ fontSize: 10 }} />
+          <Tooltip />
+          <Legend wrapperStyle={{ fontSize: 10 }} />
+          <Bar dataKey="before" fill="#c7d2fe" name="before" radius={[0, 3, 3, 0]} />
+          <Bar dataKey="after" fill="#4f46e5" name="after" radius={[0, 3, 3, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
   );
 }
 

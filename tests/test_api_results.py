@@ -218,6 +218,6 @@ async def test_runs_list_and_stage_progress(client, completed_run):
     runs = (await client.get("/api/runs")).json()
     assert any(r["id"] == completed_run for r in runs)
     one = (await client.get(f"/api/runs/{completed_run}")).json()
-    assert one["stages"] == ["collect", "classify", "analyze", "map", "strategy"]
+    assert one["stages"] == ["collect", "classify", "analyze", "map", "strategy", "loop"]
     assert one["status"] == "completed"
     assert (await client.get("/api/runs/999999")).status_code == 404

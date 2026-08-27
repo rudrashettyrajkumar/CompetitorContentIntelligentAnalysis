@@ -26,6 +26,8 @@ from app.datasources.collector import collect_for_run
 from app.db.repos import CompetitorRepo, RunRepo
 from app.intelligence.fakes import register_classification_fakes
 from app.intelligence.graph import classify_posts_for_run
+from app.scheduler.fakes import register_loop_fakes
+from app.scheduler.loop import run_loop_step
 from app.strategy.fakes import register_strategy_fakes
 from app.strategy.graph import run_strategy_stage
 
@@ -42,6 +44,7 @@ def build_pipeline_router(settings=None, models_config=None) -> ModelRouter:
         register_classification_fakes(fake)
         register_mapping_fakes(fake)
         register_strategy_fakes(fake)
+        register_loop_fakes(fake)
     return router
 
 
@@ -97,6 +100,11 @@ def run_pipeline(session_factory: sessionmaker, run_id: int) -> None:
             map_strategy_run(session, run_id=run_id, router=router, registry=registry)
         with _stage(session, run_id, "strategy"):
             run_strategy_stage(session, run_id=run_id, router=router, registry=registry)
+
+        # EPIC-08: diff against the previous completed run (no-op on the first ever run).
+        with _stage(session, run_id, "loop"):
+            RunRepo(session).set_stage(run_id, "loop")
+            run_loop_step(session, run_id=run_id, router=router, registry=registry)
 
         RunRepo(session).finish(run_id)
         session.commit()

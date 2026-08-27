@@ -18,6 +18,7 @@ from app.db.models import (
     Post,
     PostIntelligence,
     Run,
+    Schedule,
 )
 from app.db.models import StrategyProfile as StrategyProfileRow
 from app.schemas.analysis import (
@@ -621,3 +622,41 @@ class InsightRepo:
                 select(Insight).where(Insight.run_id == run_id).order_by(Insight.kind)
             )
         )
+
+
+class ScheduleRepo:
+    """Recurring-run configuration (``schedules`` table, EPIC-08)."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def create(
+        self, *, cron: str, period_days: int, adapter: str, enabled: bool = True
+    ) -> Schedule:
+        row = Schedule(cron=cron, period_days=period_days, adapter=adapter, enabled=enabled)
+        self.session.add(row)
+        self.session.flush()
+        return row
+
+    def get(self, schedule_id: int) -> Schedule | None:
+        return self.session.get(Schedule, schedule_id)
+
+    def list_all(self, *, enabled_only: bool = False) -> list[Schedule]:
+        stmt = select(Schedule).order_by(Schedule.id)
+        if enabled_only:
+            stmt = stmt.where(Schedule.enabled.is_(True))
+        return list(self.session.scalars(stmt))
+
+    def set_last_run(self, schedule_id: int, run_id: int) -> None:
+        row = self.session.get(Schedule, schedule_id)
+        if row is not None:
+            row.last_run_id = run_id
+            self.session.flush()
+
+    def delete(self, schedule_id: int) -> bool:
+        row = self.get(schedule_id)
+        if row is None:
+            return False
+        self.session.delete(row)
+        self.session.flush()
+        return True

@@ -74,7 +74,28 @@ against a `make demo` run._
 | 05 Strategy Mapping & Cross-Competitor | ✅ |
 | 06 AI Strategy Layer | ✅ |
 | 07 API & Dashboard | ✅ |
-| 08 Continuous Loop | ⬜ |
+| 08 Continuous Loop | ✅ |
+
+## Operating the continuous loop (EPIC-08)
+
+The system is built to run on a schedule, not just on demand.
+
+- **Schedules** — `POST /api/schedule {cron, period_days, adapter, enabled}` (or the panel
+  on the **Runs** page). `cron` is a standard 5-field expression; `@every 30s` interval
+  form is also accepted. Jobs are stored in the `schedules` table and (re)loaded into an
+  `AsyncIOScheduler` on server start. Default suggestion: weekly (`0 6 * * 1`).
+- **Overlap guard** — a scheduled trigger is skipped (with a log line) if any run is
+  already `pending`/`running`.
+- **Period diff** — after a run completes, if a previous completed run exists the pipeline
+  diffs the two: new/ended campaigns, emerging/fading keywords, topic & format engagement
+  shifts, per-competitor profile changes. Stored as `insights.kind = period_diff` and
+  surfaced as the **"What changed"** card + delta bars on the Overview page.
+- **Change report & notify** — a short "what changed, what to do" narrative
+  (`insights.kind = change_report`) is generated and pushed through a `Notifier`
+  (`LogNotifier` by default; implement `notify(diff, report)` for email/Slack).
+- **Auto strategy refresh** — when the count of material changes reaches
+  `loop.refresh_shift_threshold`, the EPIC-06 strategy stage re-runs for the new run and
+  the report records the pre-refresh pillars. All thresholds are in `config/app.yaml: loop`.
 
 > **Compliance note:** automated scraping of LinkedIn violates LinkedIn's User
 > Agreement. The Playwright adapter is disabled by default; the demo path uses

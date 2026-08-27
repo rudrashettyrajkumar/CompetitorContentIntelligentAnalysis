@@ -1,0 +1,8 @@
+name: change_report
+version: 1
+description: Turn a period-over-period diff into a short executive "what changed, what to do" narrative
+model_tier: reasoning
+temperature: 0.4
+output_schema: ChangeReport
+batch: false
+variables: [diff]

@@ -54,9 +54,14 @@ strategy:                  # EPIC-06 AI strategy layer
   competition_competitors_high: 3 # topic covered by >= this many competitors => "high"
   competition_competitors_med: 2  # ... >= => "medium", else "low"
 
-loop:                      # EPIC-08 thresholds
-  emerging_keyword_growth: 2.0
-  refresh_shift_threshold: 3
+loop:                      # EPIC-08 continuous-intelligence thresholds
+  emerging_keyword_growth: 2.0      # freq_after / freq_before to flag an emerging/fading keyword
+  emerging_keyword_min_count: 3     # ...and the larger side must reach this many posts
+  topic_shift_pct: 0.25            # |avg engagement delta| / baseline to flag a topic/format shift
+  min_posts_per_group: 3           # a topic/format needs this many posts on both sides to compare
+  cadence_shift_per_week: 1.0      # change in posts/week to flag a profile cadence change
+  refresh_shift_threshold: 3       # >= this many material changes => strategy_refresh_recommended
+  default_cron: "0 6 * * 1"        # suggested schedule: Mondays 06:00
 
 # Format groups for StrategyProfile.content_mix (EPIC-05). Every taxonomy format maps to
 # exactly one group; a format missing here falls into "other".

@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     apify_token: str = ""
     acknowledge_linkedin_tos: bool = False
+    scheduler_enabled: bool = True
 
     @property
     def any_llm_key(self) -> bool:

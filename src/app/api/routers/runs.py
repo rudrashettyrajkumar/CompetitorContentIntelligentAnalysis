@@ -20,7 +20,7 @@ log = get_logger(__name__)
 router = APIRouter(prefix="/api/runs", tags=["runs"])
 SessionDep = Annotated[Session, Depends(get_session)]
 
-_PIPELINE_STAGES = ["collect", "classify", "analyze", "map", "strategy"]
+_PIPELINE_STAGES = ["collect", "classify", "analyze", "map", "strategy", "loop"]
 
 
 class RunCreate(BaseModel):
