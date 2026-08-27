@@ -1,0 +1,8 @@
+name: opportunities
+version: 1
+description: Generate 8-12 concrete, original content opportunities with hook, angle, message and CTA
+model_tier: reasoning
+temperature: 0.6
+output_schema: ContentOpportunityList
+batch: true
+variables: [company, strategy, cross, topic_stats, keyword_terms, opportunities_min, opportunities_max, taxonomy_formats]

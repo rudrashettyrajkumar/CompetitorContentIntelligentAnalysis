@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     apify_token: str = ""
     acknowledge_linkedin_tos: bool = False
+    scheduler_enabled: bool = True
 
     @property
     def any_llm_key(self) -> bool:
@@ -67,6 +68,20 @@ class AppConfig(BaseModel):
     campaigns: dict = {}
     cross: dict = {}
     loop: dict = {}
+    format_groups: dict = {}
+    strategy: dict = {}
+    company: dict = {}
+
+
+class CompanyContext(BaseModel):
+    """Our company's profile (config/company.yaml) — what the strategy is generated FOR."""
+
+    name: str
+    industry: str = ""
+    services: list[str] = []
+    target_audience: str = ""
+    differentiators: list[str] = []
+    tone: str = ""
 
 
 class Taxonomies(BaseModel):
@@ -101,3 +116,8 @@ def get_app_config(path: Path | None = None) -> AppConfig:
 @lru_cache
 def get_taxonomies(path: Path | None = None) -> Taxonomies:
     return Taxonomies.model_validate(_load_yaml(path or CONFIG_DIR / "taxonomies.yaml"))
+
+
+@lru_cache
+def get_company_context(path: Path | None = None) -> CompanyContext:
+    return CompanyContext.model_validate(_load_yaml(path or CONFIG_DIR / "company.yaml"))

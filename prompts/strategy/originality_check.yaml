@@ -1,0 +1,8 @@
+name: originality_check
+version: 1
+description: Judge whether each generated hook/angle/message is a rewrite of any competitor excerpt
+model_tier: fast
+temperature: 0.0
+output_schema: OriginalityVerdict
+batch: true
+variables: [candidates, excerpts]

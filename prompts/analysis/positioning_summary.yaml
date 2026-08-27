@@ -1,0 +1,8 @@
+name: positioning_summary
+version: 1
+description: Summarise how a competitor positions itself, from its computed strategy profile
+model_tier: fast
+temperature: 0.3
+output_schema: PositioningSummary
+batch: false
+variables: [competitor, primary_themes, content_mix, best_format, best_topic, posting_frequency_per_week, engagement_windows]

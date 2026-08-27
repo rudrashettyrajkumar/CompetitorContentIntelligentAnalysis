@@ -1,0 +1,8 @@
+name: pillars
+version: 1
+description: Turn competitor intelligence into 4-6 original content pillars, mix, formats and cadence
+model_tier: reasoning
+temperature: 0.5
+output_schema: ContentStrategy
+batch: false
+variables: [company, profiles, cross, top_content, campaigns, pillars_min, pillars_max]

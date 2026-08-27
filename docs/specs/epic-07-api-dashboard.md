@@ -49,14 +49,16 @@ under `/api`). Dev: Vite proxy to :8000. No external CDNs (free/self-contained).
 
 ## Deliverables
 
-- [ ] Routers + background pipeline execution + progress tracking on `runs` table
-- [ ] Export builders (json bundle, xlsx workbook) + tests (sheet presence, row counts)
-- [ ] API tests for every route incl. 404/409 and paging
-- [ ] `frontend/` scaffold, typed API client (generated from route models or hand-kept
-      `types.ts`), all 7 pages, loading/error states
-- [ ] FastAPI static serving + SPA fallback route; Dockerfile frontend build stage
-      completed; `make demo` opens a fully populated dashboard
-- [ ] `README.md` updated: quickstart, screenshots section, architecture pointer
+- [x] Routers (`competitors`, `runs`, `results`, `exports`) + background pipeline
+      execution (`app/pipeline.py`, run in a worker thread) + per-stage timings on `runs`
+- [x] Export builders (json bundle, xlsx workbook via openpyxl) + tests (sheet presence,
+      row counts vs. the JSON bundle)
+- [x] API tests for every route incl. 404 (RFC 7807) / 409-while-processing and paging/sort/filter
+- [x] `frontend/` (Vite + React 18 + TS + Tailwind + Recharts), hand-kept `types.ts` +
+      typed `api.ts`, all 7 pages, loading/error/empty states
+- [x] FastAPI static serving of `frontend/dist` + history-API SPA fallback; Dockerfile
+      frontend build stage + self-seeding entrypoint; `make dashboard` / `docker compose up`
+- [x] `README.md` updated: quickstart, dashboard/API sections, screenshots placeholder
 
 ## Acceptance criteria
 
@@ -68,3 +70,30 @@ under `/api`). Dev: Vite proxy to :8000. No external CDNs (free/self-contained).
 4. `docker compose up` serves the same experience from a clean build.
 5. `make test` (incl. API tests) offline; frontend `npm run build` succeeds in CI-like
    clean env.
+
+## Implementation notes
+
+- **`POST /api/runs` is now async (202 + background pipeline)**, superseding the EPIC-02
+  collect-only 200 contract. `app/pipeline.py::run_pipeline` runs collect → classify →
+  analyze → map → strategy in a worker thread (`anyio.to_thread`), recording a wall-clock
+  timing per stage on `runs.stage_timings`; any failure lands as `status=failed` with the
+  error text. `tests/test_api_epic02.py` was updated to poll for completion.
+- **`runs` table** gained `stage_timings` (JSON), `trigger` (`manual|scheduled`), and
+  `competitor_ids` (the filter used). `RunRepo` gained `record_timing`, `latest_completed`,
+  `any_in_progress` (the last two are groundwork EPIC-08 uses).
+- **Results routes** go through `ResultsService`; `require_completed_run` raises
+  `RunNotFound` → 404 or `RunNotReady` → 409, both rendered as RFC 7807
+  `application/problem+json` by handlers in `app/api/errors.py`. `keywords` returns the
+  cross-insight keyword matrix (the frequency-vs-performance view).
+- **`/api/results/{id}/diff`** and a `ctas` section are included now so EPIC-08 only adds
+  the schedule router; `main.py` already tries to include `app.api.routers.schedule` and
+  tolerates its absence, and the lifespan holds an `app.state.scheduler` slot.
+- **Frontend**: `frontend/` Vite build → `frontend/dist`, served by FastAPI `StaticFiles`
+  at `/assets` + a catch-all that returns `index.html` for non-`/api` paths (SPA routing).
+  Typed client is hand-kept (`src/types.ts` + `src/api.ts`). Recharts pushes the bundle
+  ~590 KB (gzip ~170 KB) — a size warning, not an error.
+- **Docker**: multi-stage (node build → python runtime); `docker-entrypoint.sh` seeds one
+  `make demo` run on first boot when `runs` is empty so `docker compose up` lands on a
+  populated dashboard. `docker-compose.yml` defaults to `LLM_FAKE_MODE=true`.
+- **`make demo`** stays a batch script (pipeline only, no server); `make dashboard`
+  (= `demo` + `frontend` + `uvicorn`) is the one-command populated dashboard.

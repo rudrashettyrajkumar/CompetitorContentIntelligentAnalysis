@@ -1,0 +1,8 @@
+name: calendar
+version: 1
+description: Lay the strategy and opportunities onto a 30-day posting calendar that respects the cadence
+model_tier: reasoning
+temperature: 0.4
+output_schema: ContentCalendar
+batch: false
+variables: [company, strategy, opportunities, calendar_days]

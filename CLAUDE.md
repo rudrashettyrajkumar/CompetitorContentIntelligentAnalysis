@@ -26,7 +26,7 @@ implementing an epic, follow the `epic-workflow` skill and your epic's spec exac
 
 Python 3.11+, SQLAlchemy 2.0 + SQLite (Postgres-ready), pydantic-settings, structlog,
 APScheduler, pytest. Source in `src/app/` (`config/ core/ input/ datasources/ schemas/
-intelligence/ analysis/ strategy/ graph/ api/ db/ scheduler/`), prompts in `prompts/`,
+intelligence/ analysis/ strategy/ api/ db/ scheduler/`), prompts in `prompts/`,
 tests in `tests/` mirroring `src/app/`.
 
 ## Commands

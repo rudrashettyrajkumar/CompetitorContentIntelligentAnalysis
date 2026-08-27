@@ -51,6 +51,9 @@ class Run(Base):
     status: Mapped[str] = mapped_column(String(20), default="pending")
     stage: Mapped[str | None] = mapped_column(String(50))
     error: Mapped[str | None] = mapped_column(Text)
+    stage_timings: Mapped[dict | None] = mapped_column(JSON, default=None)  # {stage: seconds}
+    trigger: Mapped[str] = mapped_column(String(20), default="manual")  # manual | scheduled
+    competitor_ids: Mapped[list | None] = mapped_column(JSON, default=None)  # filter used, if any
 
 
 class Post(Base):
@@ -125,6 +128,18 @@ class StrategyProfile(Base):
     posting_frequency_per_week: Mapped[float | None] = mapped_column(Float)
     engagement_windows: Mapped[list | None] = mapped_column(JSON)
     positioning_summary: Mapped[str | None] = mapped_column(Text)
+
+
+class Schedule(Base):
+    __tablename__ = "schedules"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    cron: Mapped[str] = mapped_column(String(120))  # crontab expr, or "@every <n>s"
+    period_days: Mapped[int] = mapped_column(Integer, default=30)
+    adapter: Mapped[str] = mapped_column(String(50), default="mock")
+    enabled: Mapped[bool] = mapped_column(default=True)
+    last_run_id: Mapped[int | None] = mapped_column(ForeignKey("runs.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class Insight(Base):

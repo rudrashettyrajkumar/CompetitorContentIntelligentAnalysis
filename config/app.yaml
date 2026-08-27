@@ -27,9 +27,48 @@ campaigns:                 # EPIC-04 campaign detection
   min_posts: 3             # a theme needs at least this many posts to be a campaign
 
 cross:                     # EPIC-05 thresholds
-  min_posts_per_cell: 3
-  emerging_keyword_growth: 2.0
+  min_posts_per_cell: 3          # a topic/format needs this many posts to carry a "best" label
+  min_posts_for_best: 3          # StrategyProfile.best_format / best_topic sample floor
+  common_min_competitors: 2      # a theme is "common" when this many competitors cover it
+  saturation_min_competitors: 3  # + above-median share => saturated
+  whitespace_max_competitors: 1  # taxonomy topics with <= this coverage are white space
+  format_opportunity_multiplier: 2.0   # format avg engagement / overall avg to flag it
+  format_opportunity_max_share: 0.25   # ...and only when it is still a minority of posts
+  keyword_min_frequency: 2       # keyword must appear in this many posts to enter the matrix
+  top_content_size: 20           # Top-N content report size
+  why_it_worked_batch: 5         # posts per why_it_worked LLM call
 
-loop:                      # EPIC-08 thresholds
-  emerging_keyword_growth: 2.0
-  refresh_shift_threshold: 3
+strategy:                  # EPIC-06 AI strategy layer
+  pillars_min: 4
+  pillars_max: 6
+  opportunities_min: 8
+  opportunities_max: 12
+  calendar_days: 30
+  originality_ngram: 6            # n-gram size for the deterministic overlap check
+  originality_max_overlap: 0.30   # reject a hook/angle/message above this overlap ratio
+  originality_regen_attempts: 1   # regenerate a rejected item this many times before dropping
+  mix_tolerance_pct: 10           # calendar mix must land within +/- this of the recommended mix
+  # signal derivation cut-offs (the LLM proposes, the code stamps these three fields)
+  signal_topic_share_high: 0.15   # topic post-share >= => competitor_signal "high"
+  signal_topic_share_med: 0.05    # ... >= => "medium", else "low"
+  competition_competitors_high: 3 # topic covered by >= this many competitors => "high"
+  competition_competitors_med: 2  # ... >= => "medium", else "low"
+
+loop:                      # EPIC-08 continuous-intelligence thresholds
+  emerging_keyword_growth: 2.0      # freq_after / freq_before to flag an emerging/fading keyword
+  emerging_keyword_min_count: 3     # ...and the larger side must reach this many posts
+  topic_shift_pct: 0.25            # |avg engagement delta| / baseline to flag a topic/format shift
+  min_posts_per_group: 3           # a topic/format needs this many posts on both sides to compare
+  cadence_shift_per_week: 1.0      # change in posts/week to flag a profile cadence change
+  refresh_shift_threshold: 3       # >= this many material changes => strategy_refresh_recommended
+  default_cron: "0 6 * * 1"        # suggested schedule: Mondays 06:00
+
+# Format groups for StrategyProfile.content_mix (EPIC-05). Every taxonomy format maps to
+# exactly one group; a format missing here falls into "other".
+format_groups:
+  visual: [static_image, carousel, video]
+  long_form: [blog_article, whitepaper_report, case_study, customer_story, research_data]
+  thought_leadership: [thought_leadership, industry_news, ai_related]
+  interactive: [poll, event_webinar]
+  promotional: [product_promotion, employer_branding, hiring]
+  text: [text_only]

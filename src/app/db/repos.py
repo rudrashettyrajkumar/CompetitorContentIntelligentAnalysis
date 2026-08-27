@@ -10,7 +10,17 @@ from datetime import datetime
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.db.models import Campaign, CompanyProfile, Competitor, Post, PostIntelligence, Run
+from app.db.models import (
+    Campaign,
+    CompanyProfile,
+    Competitor,
+    Insight,
+    Post,
+    PostIntelligence,
+    Run,
+    Schedule,
+)
+from app.db.models import StrategyProfile as StrategyProfileRow
 from app.schemas.analysis import (
     CompetitorTopPosts,
     CtaPerformance,
@@ -64,8 +74,21 @@ class RunRepo:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def create(self, *, period_days: int, adapter: str) -> Run:
-        run = Run(period_days=period_days, adapter=adapter, status="pending")
+    def create(
+        self,
+        *,
+        period_days: int,
+        adapter: str,
+        trigger: str = "manual",
+        competitor_ids: list[int] | None = None,
+    ) -> Run:
+        run = Run(
+            period_days=period_days,
+            adapter=adapter,
+            status="pending",
+            trigger=trigger,
+            competitor_ids=list(competitor_ids) if competitor_ids else None,
+        )
         self.session.add(run)
         self.session.flush()
         return run
@@ -75,6 +98,26 @@ class RunRepo:
 
     def list_all(self) -> list[Run]:
         return list(self.session.scalars(select(Run).order_by(Run.started_at.desc())))
+
+    def latest_completed(self, before_run_id: int | None = None) -> Run | None:
+        stmt = select(Run).where(Run.status == "completed")
+        if before_run_id is not None:
+            stmt = stmt.where(Run.id < before_run_id)
+        return self.session.scalars(stmt.order_by(Run.id.desc())).first()
+
+    def any_in_progress(self) -> Run | None:
+        return self.session.scalars(
+            select(Run).where(Run.status.in_(("pending", "running"))).order_by(Run.id.desc())
+        ).first()
+
+    def record_timing(self, run_id: int, stage: str, seconds: float) -> None:
+        run = self.session.get(Run, run_id)
+        if run is None:
+            raise ValueError(f"Unknown run {run_id}")
+        timings = dict(run.stage_timings or {})
+        timings[stage] = round(seconds, 3)
+        run.stage_timings = timings
+        self.session.flush()
 
     def set_stage(self, run_id: int, stage: str) -> None:
         run = self.session.get(Run, run_id)
@@ -487,3 +530,133 @@ class CampaignRepo:
             )
             or 0
         )
+
+
+class StrategyProfileRepo:
+    """Per-competitor strategy profiles (EPIC-05), keyed by run. A re-run replaces the set."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def replace_for_run(self, run_id: int, profiles) -> list[StrategyProfileRow]:
+        """``profiles``: iterable of :class:`app.schemas.strategy_map.StrategyProfile`."""
+        for existing in self.session.scalars(
+            select(StrategyProfileRow).where(StrategyProfileRow.run_id == run_id)
+        ):
+            self.session.delete(existing)
+        self.session.flush()
+        created: list[StrategyProfileRow] = []
+        for profile in profiles:
+            row = StrategyProfileRow(
+                competitor_id=profile.competitor_id,
+                run_id=run_id,
+                primary_themes=list(profile.primary_themes),
+                content_mix=dict(profile.content_mix),
+                best_format=profile.best_format,
+                best_topic=profile.best_topic,
+                posting_frequency_per_week=profile.posting_frequency_per_week,
+                engagement_windows=list(profile.engagement_windows),
+                positioning_summary=profile.positioning_summary,
+            )
+            self.session.add(row)
+            created.append(row)
+        self.session.flush()
+        return created
+
+    def list_for_run(self, run_id: int) -> list[StrategyProfileRow]:
+        return list(
+            self.session.scalars(
+                select(StrategyProfileRow)
+                .where(StrategyProfileRow.run_id == run_id)
+                .order_by(StrategyProfileRow.competitor_id)
+            )
+        )
+
+    def count_for_run(self, run_id: int) -> int:
+        return (
+            self.session.scalar(
+                select(func.count())
+                .select_from(StrategyProfileRow)
+                .where(StrategyProfileRow.run_id == run_id)
+            )
+            or 0
+        )
+
+
+class InsightRepo:
+    """Run-keyed derived insight bundles (``insights`` table).
+
+    ``kind`` is one of: cross_competitor | top_content | strategy | opportunities |
+    calendar | period_diff | change_report. One row per (run, kind); writing replaces it.
+    """
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def put(self, run_id: int, kind: str, payload) -> Insight:
+        existing = self.session.scalar(
+            select(Insight).where(Insight.run_id == run_id, Insight.kind == kind)
+        )
+        if existing:
+            existing.payload = payload
+            existing.created_at = datetime.utcnow()
+            self.session.flush()
+            return existing
+        row = Insight(run_id=run_id, kind=kind, payload=payload)
+        self.session.add(row)
+        self.session.flush()
+        return row
+
+    def get(self, run_id: int, kind: str) -> Insight | None:
+        return self.session.scalar(
+            select(Insight).where(Insight.run_id == run_id, Insight.kind == kind)
+        )
+
+    def get_payload(self, run_id: int, kind: str):
+        row = self.get(run_id, kind)
+        return row.payload if row is not None else None
+
+    def list_for_run(self, run_id: int) -> list[Insight]:
+        return list(
+            self.session.scalars(
+                select(Insight).where(Insight.run_id == run_id).order_by(Insight.kind)
+            )
+        )
+
+
+class ScheduleRepo:
+    """Recurring-run configuration (``schedules`` table, EPIC-08)."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def create(
+        self, *, cron: str, period_days: int, adapter: str, enabled: bool = True
+    ) -> Schedule:
+        row = Schedule(cron=cron, period_days=period_days, adapter=adapter, enabled=enabled)
+        self.session.add(row)
+        self.session.flush()
+        return row
+
+    def get(self, schedule_id: int) -> Schedule | None:
+        return self.session.get(Schedule, schedule_id)
+
+    def list_all(self, *, enabled_only: bool = False) -> list[Schedule]:
+        stmt = select(Schedule).order_by(Schedule.id)
+        if enabled_only:
+            stmt = stmt.where(Schedule.enabled.is_(True))
+        return list(self.session.scalars(stmt))
+
+    def set_last_run(self, schedule_id: int, run_id: int) -> None:
+        row = self.session.get(Schedule, schedule_id)
+        if row is not None:
+            row.last_run_id = run_id
+            self.session.flush()
+
+    def delete(self, schedule_id: int) -> bool:
+        row = self.get(schedule_id)
+        if row is None:
+            return False
+        self.session.delete(row)
+        self.session.flush()
+        return True
