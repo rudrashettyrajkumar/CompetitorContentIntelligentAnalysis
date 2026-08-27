@@ -24,4 +24,5 @@ COPY --from=frontend /build/dist frontend/dist
 RUN mkdir -p data && chmod +x docker-entrypoint.sh
 EXPOSE 8000
 ENTRYPOINT ["./docker-entrypoint.sh"]
-CMD ["uvicorn", "app.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Bind $PORT when the platform injects one (Render), fall back to 8000 (Fly, compose, local).
+CMD ["sh", "-c", "exec uvicorn app.api.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
