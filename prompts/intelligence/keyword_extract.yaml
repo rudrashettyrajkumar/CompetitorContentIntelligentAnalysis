@@ -1,0 +1,8 @@
+name: keyword_extract
+version: 1
+description: Extract categorized keywords and key phrases from each LinkedIn post
+model_tier: fast
+temperature: 0.1
+output_schema: KeywordClassification
+batch: true
+variables: [posts, categories]

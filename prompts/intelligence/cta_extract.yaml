@@ -1,0 +1,8 @@
+name: cta_extract
+version: 1
+description: Extract the primary call-to-action type and its verbatim text from each LinkedIn post
+model_tier: fast
+temperature: 0.1
+output_schema: CtaClassification
+batch: true
+variables: [posts, taxonomy]

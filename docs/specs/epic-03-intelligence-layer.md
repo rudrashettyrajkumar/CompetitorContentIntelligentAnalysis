@@ -66,13 +66,13 @@ batched) → tfidf_crosscheck → persist`.
 
 ## Deliverables
 
-- [ ] `config/taxonomies.yaml`
-- [ ] `src/app/schemas/intelligence.py` + registry entries
-- [ ] 4 prompt packs with render + parse tests
-- [ ] `src/app/intelligence/{format,topics,cta,keywords}.py` node functions
-- [ ] `src/app/intelligence/graph.py` subgraph + `PostIntelligenceRepo`
-- [ ] FakeLLM fixtures generating plausible classifications for mock content
-- [ ] Tests: caching (second run classifies 0), version-bump invalidation, batch
+- [x] `config/taxonomies.yaml`
+- [x] `src/app/schemas/intelligence.py` + registry entries
+- [x] 4 prompt packs with render + parse tests
+- [x] `src/app/intelligence/{format,topics,cta,keywords}.py` node functions
+- [x] `src/app/intelligence/graph.py` subgraph + `PostIntelligenceRepo`
+- [x] FakeLLM fixtures generating plausible classifications for mock content
+- [x] Tests: caching (second run classifies 0), version-bump invalidation, batch
       fallback path, tfidf merge, unknown-taxonomy value rejected then repaired
 
 ## Acceptance criteria
@@ -83,3 +83,27 @@ batched) → tfidf_crosscheck → persist`.
 3. Batch of 10 posts = 1 LLM call per task type (asserted via FakeLLM call counter).
 4. TF-IDF terms missing from LLM output appear with `source: tfidf`.
 5. `make test` offline; `make demo` now includes classification.
+
+## Implementation notes
+
+- **`PostIntelligenceRepo` lives in `src/app/db/repos.py`**, not `graph.py`, to honour the
+  CLAUDE.md rule that repositories own every query. `graph.py` imports it.
+- **`post_intelligence.hashtags` column added.** The EPIC-01 model omitted it although
+  solution-design §6 lists it; added `hashtags` (JSON) so `RawPost.hashtags` can be
+  persisted alongside the LLM keywords. Minimal groundwork fix.
+- **Four per-task output schemas** (`FormatClassification`, `TopicClassification`,
+  `CtaClassification`, `KeywordClassification`) each carry `results: list[<IndexedResult>]`;
+  the spec's `PostClassification` / `BatchClassification` are kept as the merged
+  representation persisted to the DB. One task per prompt; batching is across posts.
+- **Taxonomy enforcement is in the Pydantic schemas** (`field_validator` against
+  `config/taxonomies.yaml`), so an invented value raises `ValidationError` and the
+  existing `ModelRouter` repair round-trip fires with no extra code in the nodes.
+- **Batch fallback** (`intelligence/batching.py`): a batch call that errors *or* returns a
+  partial result is retried once per-post; still-failing posts are recorded in
+  `ClassifyResult.errors` and skipped at persist, never aborting the run.
+- **`make demo` now drops + recreates its SQLite schema each run** so schema changes in
+  later epics don't require a manual DB wipe. It runs classification twice to show the
+  cache hit (second pass classifies 0).
+- **TF-IDF cross-check** uses scikit-learn `TfidfVectorizer` (1-2 grams, English
+  stop-words) over the run corpus; top-5 terms per post not already surfaced by the LLM
+  are merged as `category: frequent`, `source: tfidf`.
