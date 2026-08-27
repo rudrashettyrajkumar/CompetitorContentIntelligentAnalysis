@@ -144,6 +144,22 @@ class ModelRouter:
     def use_fake(self) -> bool:
         return self.settings.llm_fake_mode or not self.settings.any_llm_key
 
+    def chat_model_for(self, tier: str, *, temperature: float = 0.4) -> Any:
+        """A ready LangChain chat model for the first configured+keyed provider in ``tier``.
+
+        Used by the deepagents-based campaign/strategy agents, which need a real model
+        object rather than the router's validate-and-repair ``invoke`` path. Raises in
+        fake mode — those agents run a scripted stub offline instead.
+        """
+        if self.use_fake:
+            raise LLMError("chat_model_for is unavailable in fake mode")
+        for provider_name, model_id in self.models_config.models_for(tier):
+            provider = self.models_config.providers[provider_name]
+            api_key = getattr(self.settings, provider.api_key_env.lower(), "")
+            if api_key:
+                return self.chat_factory(provider, model_id, api_key, temperature)
+        raise AllProvidersFailedError([])
+
     def invoke(
         self,
         *,

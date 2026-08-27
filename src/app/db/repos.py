@@ -1,15 +1,24 @@
 """Repositories own every query. Feature code never touches SQLAlchemy directly.
 
 EPIC-01 ships CompetitorRepo and RunRepo; EPIC-02 adds ProfileRepo and PostRepo;
-EPIC-03 adds PostIntelligenceRepo.
+EPIC-03 adds PostIntelligenceRepo; EPIC-04 adds AnalysisRepo and CampaignRepo.
 """
 
+from collections import defaultdict
 from datetime import datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.db.models import CompanyProfile, Competitor, Post, PostIntelligence, Run
+from app.db.models import Campaign, CompanyProfile, Competitor, Post, PostIntelligence, Run
+from app.schemas.analysis import (
+    CompetitorTopPosts,
+    CtaPerformance,
+    FormatPerformance,
+    TopicPerformance,
+    TopPost,
+    ValidatedCampaign,
+)
 from app.schemas.collection import CompanyProfile as CompanyProfileIn
 from app.schemas.collection import RawPost
 from app.schemas.intelligence import PostClassification
@@ -261,6 +270,220 @@ class PostIntelligenceRepo:
                 .select_from(PostIntelligence)
                 .join(Post, Post.id == PostIntelligence.post_id)
                 .where(Post.run_id == run_id)
+            )
+            or 0
+        )
+
+
+def _avg(values: list[float]) -> float:
+    return sum(values) / len(values) if values else 0.0
+
+
+def _avg_or_none(values: list[float]) -> float | None:
+    return sum(values) / len(values) if values else None
+
+
+class AnalysisRepo:
+    """Engagement scoring write-back plus every ranking query (brief steps 4-5).
+
+    Rankings are computed in Python over one indexed fetch of the run's scored posts —
+    deterministic, no LLM, and trivially unit-testable against a hand-computed fixture.
+    """
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    # ---- scoring write-back ------------------------------------------------ #
+    def metrics_for_run(self, run_id: int):
+        """Raw metrics + follower count for every classified post in the run."""
+        stmt = (
+            select(
+                Post.id.label("post_id"),
+                Post.reactions.label("reactions"),
+                Post.comments.label("comments"),
+                Post.reposts.label("reposts"),
+                CompanyProfile.followers.label("followers"),
+            )
+            .join(PostIntelligence, PostIntelligence.post_id == Post.id)
+            .outerjoin(CompanyProfile, CompanyProfile.competitor_id == Post.competitor_id)
+            .where(Post.run_id == run_id)
+            .order_by(Post.id)
+        )
+        return list(self.session.execute(stmt))
+
+    def set_post_scores(self, scores: dict) -> None:
+        """``scores``: ``{post_id: PostScore}``. Writes score/rate/metrics_complete."""
+        if not scores:
+            return
+        rows = self.session.scalars(
+            select(PostIntelligence).where(PostIntelligence.post_id.in_(list(scores)))
+        ).all()
+        for row in rows:
+            score = scores[row.post_id]
+            row.engagement_score = score.engagement_score
+            row.engagement_rate = score.engagement_rate
+            row.metrics_complete = score.metrics_complete
+        self.session.flush()
+
+    # ---- shared fetch ---------------------------------------------------- #
+    def scored_rows_for_run(self, run_id: int):
+        """One row per classified post: identity + classification + engagement."""
+        stmt = (
+            select(
+                Post.id.label("post_id"),
+                Post.competitor_id.label("competitor_id"),
+                Competitor.name.label("competitor_name"),
+                Post.url.label("url"),
+                Post.posted_at.label("posted_at"),
+                Post.hashtags.label("hashtags"),
+                PostIntelligence.format.label("format"),
+                PostIntelligence.topic.label("topic"),
+                PostIntelligence.sub_topic.label("sub_topic"),
+                PostIntelligence.cta.label("cta"),
+                PostIntelligence.keywords.label("keywords"),
+                PostIntelligence.engagement_score.label("engagement_score"),
+                PostIntelligence.engagement_rate.label("engagement_rate"),
+                PostIntelligence.metrics_complete.label("metrics_complete"),
+            )
+            .join(PostIntelligence, PostIntelligence.post_id == Post.id)
+            .join(Competitor, Competitor.id == Post.competitor_id)
+            .where(Post.run_id == run_id)
+            .order_by(Post.id)
+        )
+        return list(self.session.execute(stmt))
+
+    # ---- rankings ------------------------------------------------------- #
+    @staticmethod
+    def _to_top_post(row) -> TopPost:
+        return TopPost(
+            post_id=row.post_id,
+            competitor_id=row.competitor_id,
+            competitor_name=row.competitor_name,
+            url=row.url,
+            posted_at=row.posted_at,
+            format=row.format,
+            topic=row.topic,
+            engagement_score=row.engagement_score or 0.0,
+            engagement_rate=row.engagement_rate,
+            metrics_complete=bool(row.metrics_complete),
+        )
+
+    @staticmethod
+    def _rank_key(row):
+        # highest score first; stable tie-break on post_id so results are deterministic
+        return (-(row.engagement_score or 0.0), row.post_id)
+
+    def top_posts(self, run_id: int, n: int) -> list[TopPost]:
+        rows = sorted(self.scored_rows_for_run(run_id), key=self._rank_key)
+        return [self._to_top_post(r) for r in rows[: max(0, n)]]
+
+    def top_posts_by_competitor(self, run_id: int, n: int) -> list[CompetitorTopPosts]:
+        by_competitor: dict[int, list] = defaultdict(list)
+        names: dict[int, str] = {}
+        for row in self.scored_rows_for_run(run_id):
+            by_competitor[row.competitor_id].append(row)
+            names[row.competitor_id] = row.competitor_name
+        out: list[CompetitorTopPosts] = []
+        for competitor_id in sorted(by_competitor):
+            ranked = sorted(by_competitor[competitor_id], key=self._rank_key)[: max(0, n)]
+            out.append(
+                CompetitorTopPosts(
+                    competitor_id=competitor_id,
+                    competitor_name=names[competitor_id],
+                    posts=[self._to_top_post(r) for r in ranked],
+                )
+            )
+        return out
+
+    def _group_performance(self, run_id: int, attr: str):
+        groups: dict[str, list] = defaultdict(list)
+        for row in self.scored_rows_for_run(run_id):
+            key = getattr(row, attr)
+            if key is None:
+                continue
+            groups[key].append(row)
+        summary: dict[str, dict] = {}
+        for key, rows in groups.items():
+            best = min(rows, key=self._rank_key)
+            summary[key] = dict(
+                posts=len(rows),
+                avg_engagement=_avg([r.engagement_score or 0.0 for r in rows]),
+                avg_rate=_avg_or_none(
+                    [r.engagement_rate for r in rows if r.engagement_rate is not None]
+                ),
+                best_post=best.url,
+                best_post_score=best.engagement_score or 0.0,
+            )
+        return summary
+
+    def top_formats(self, run_id: int) -> list[FormatPerformance]:
+        rows = [
+            FormatPerformance(format=key, **vals)
+            for key, vals in self._group_performance(run_id, "format").items()
+        ]
+        return sorted(rows, key=lambda r: (-r.avg_engagement, r.format))
+
+    def top_topics(self, run_id: int) -> list[TopicPerformance]:
+        rows = [
+            TopicPerformance(topic=key, **vals)
+            for key, vals in self._group_performance(run_id, "topic").items()
+        ]
+        return sorted(rows, key=lambda r: (-r.avg_engagement, r.topic))
+
+    def top_ctas(self, run_id: int) -> list[CtaPerformance]:
+        rows = [
+            CtaPerformance(cta=key, **vals)
+            for key, vals in self._group_performance(run_id, "cta").items()
+        ]
+        return sorted(rows, key=lambda r: (-r.avg_engagement, r.cta))
+
+
+class CampaignRepo:
+    """Derived campaign records, keyed by ``run_id``. A re-run replaces the run's set."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def replace_for_run(self, run_id: int, campaigns: list[ValidatedCampaign]) -> list[Campaign]:
+        for existing in self.session.scalars(select(Campaign).where(Campaign.run_id == run_id)):
+            self.session.delete(existing)
+        self.session.flush()
+        created: list[Campaign] = []
+        for campaign in campaigns:
+            row = Campaign(
+                competitor_id=campaign.competitor_id,
+                run_id=run_id,
+                name=campaign.name,
+                theme=campaign.theme,
+                objective=campaign.objective,
+                post_ids=list(campaign.post_ids),
+                start_date=campaign.start_date,
+                end_date=campaign.end_date,
+                formats=list(campaign.formats),
+                keywords=list(campaign.keywords),
+                hashtags=list(campaign.hashtags),
+                cta=campaign.dominant_cta,
+                target_audience=campaign.target_audience,
+                total_engagement=campaign.total_engagement,
+                top_post_id=campaign.top_post_id,
+                performance_summary=campaign.performance_summary,
+            )
+            self.session.add(row)
+            created.append(row)
+        self.session.flush()
+        return created
+
+    def list_for_run(self, run_id: int) -> list[Campaign]:
+        return list(
+            self.session.scalars(
+                select(Campaign).where(Campaign.run_id == run_id).order_by(Campaign.id)
+            )
+        )
+
+    def count_for_run(self, run_id: int) -> int:
+        return (
+            self.session.scalar(
+                select(func.count()).select_from(Campaign).where(Campaign.run_id == run_id)
             )
             or 0
         )

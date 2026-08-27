@@ -1,0 +1,8 @@
+name: campaign_cluster
+version: 1
+description: Cluster one competitor's classified LinkedIn posts into named multi-post campaigns
+model_tier: reasoning
+temperature: 0.4
+output_schema: CampaignClustering
+batch: true
+variables: [competitor, posts, min_posts, window_days]

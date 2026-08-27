@@ -18,6 +18,14 @@ engagement:
     comments: 2
     reposts: 3
 
+analysis:                  # EPIC-04 ranking sizes
+  top_posts: 20
+  top_posts_per_competitor: 5
+
+campaigns:                 # EPIC-04 campaign detection
+  window_days: 30          # posts in one campaign must fall inside this span
+  min_posts: 3             # a theme needs at least this many posts to be a campaign
+
 cross:                     # EPIC-05 thresholds
   min_posts_per_cell: 3
   emerging_keyword_growth: 2.0

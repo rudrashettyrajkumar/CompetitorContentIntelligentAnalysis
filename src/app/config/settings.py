@@ -63,6 +63,8 @@ class AppConfig(BaseModel):
     collection: dict = {}
     llm: dict = {}
     engagement: dict = {}
+    analysis: dict = {}
+    campaigns: dict = {}
     cross: dict = {}
     loop: dict = {}
 

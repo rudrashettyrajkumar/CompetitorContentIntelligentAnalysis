@@ -51,14 +51,14 @@ needs, same conventions).
 
 ## Deliverables
 
-- [ ] `engagement.py` + weights config + tests (missing metrics, zero followers, rate
+- [x] `engagement.py` + weights config + tests (missing metrics, zero followers, rate
       NULL cases)
-- [ ] `schemas/analysis.py` result models
-- [ ] `AnalysisRepo` ranking queries + tests against seeded fixture data
-- [ ] `campaigns.py` deep agent + validation layer + `CampaignRepo`
-- [ ] `prompts/campaigns/*` + tests
-- [ ] Graph wiring: `score → rank → detect_campaigns` stage appended to pipeline
-- [ ] Tests: campaign validation drops hallucinated URLs; overlapping-campaign
+- [x] `schemas/analysis.py` result models
+- [x] `AnalysisRepo` ranking queries + tests against seeded fixture data
+- [x] `campaigns.py` deep agent + validation layer + `CampaignRepo`
+- [x] `prompts/campaigns/*` + tests
+- [x] Graph wiring: `score → rank → detect_campaigns` stage appended to pipeline
+- [x] Tests: campaign validation drops hallucinated URLs; overlapping-campaign
       resolution; offline stub path
 
 ## Acceptance criteria
@@ -71,3 +71,27 @@ needs, same conventions).
    campaign stage (fake mode) produces one validated campaign with correct aggregates.
 4. Validation demonstrably rejects a campaign referencing a nonexistent post URL.
 5. `make test` offline; `make demo` includes scoring + campaigns.
+
+## Implementation notes
+
+- **Pipeline wiring.** There is no single unified pipeline graph object in the repo yet
+  (EPIC-03 exposes `classify_posts_for_run`; stages are sequenced by `demo.py` / tests).
+  Added `src/app/analysis/graph.py` with its own LangGraph `StateGraph`
+  (`score → rank → detect_campaigns`) and an `analyze_run()` entrypoint, invoked from
+  `demo.py` after classification — same shape as the EPIC-03 stage.
+- **Deep agent.** `DeepCampaignAgent` uses `deepagents.create_deep_agent` per competitor
+  with the competitor's classified posts as a virtual-FS file, and falls back to a single
+  `ModelRouter.invoke` reasoning call (schema `CampaignClustering`) if the agent errors.
+  Offline (`make test` / `make demo`) uses `FakeCampaignAgent`, a scripted stub that
+  buckets posts by classified topic and slices `window_days` windows — zero LLM calls.
+  Added `ModelRouter.chat_model_for(tier)` so the deep agent gets its chat model from the
+  router module rather than instantiating one in feature code (raises in fake mode).
+- **Rankings** are computed with Python aggregation over one indexed fetch of the run's
+  scored posts (`AnalysisRepo.scored_rows_for_run`) rather than SQL `GROUP BY` — no LLM,
+  deterministic, and directly unit-tested against a hand-computed fixture.
+- **Unknown-URL handling.** A campaign that cites any post URL not present in the run is
+  dropped whole (logged), per acceptance criterion 4; overlap resolution keeps the
+  higher-`total_engagement` campaign and trims/drops the weaker one below `min_posts`.
+- **New config** (`config/app.yaml`): `analysis.top_posts` (20),
+  `analysis.top_posts_per_competitor` (5), `campaigns.window_days` (30),
+  `campaigns.min_posts` (3).
