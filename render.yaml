@@ -1,0 +1,49 @@
+# Render deployment blueprint — $0 tier (free web service + free Render Postgres).
+#
+# Free-tier caveats (see docs/deployment.md):
+#   * Web service sleeps after ~15 min idle; cold start ~30-60s.
+#   * Free Postgres is SUSPENDED 30 days after creation — data is lost unless you
+#     upgrade the DB or swap DATABASE_URL to Neon/Supabase before then.
+#   * In-process APScheduler is disabled here (sleeps with the service). Drive runs
+#     with an external cron hitting POST /api/runs — see docs/deployment.md.
+#
+# Deploy: push this file, then Render dashboard -> New + -> Blueprint -> pick the
+# repo. Set the three *_API_KEY values as secret env vars when prompted.
+# To move off Render Postgres later: delete the `databases:` block, change the
+# DATABASE_URL entry to `sync: false`, and set it to the Neon/Supabase URL.
+
+databases:
+  - name: cci-db
+    plan: free
+    region: oregon
+    databaseName: cci
+    user: cci
+
+services:
+  - type: web
+    name: competitor-intelligence
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    autoDeploy: false
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: cci-db
+          property: connectionString   # build_engine() normalizes the scheme + pins psycopg2
+      - key: LLM_FAKE_MODE
+        value: "false"
+      - key: SEED_DEMO
+        value: "false"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: SCHEDULER_ENABLED
+        value: "false"                  # free web sleeps; use an external cron instead
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: NVIDIA_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false

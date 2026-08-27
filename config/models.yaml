@@ -16,12 +16,16 @@ providers:
     api_key_env: GROQ_API_KEY
     rpm: 30
 
+# Rosters below were probed live on 2026-08-27 with a real chat + JSON call against
+# each key in .env. Only models that returned valid JSON on repeated calls are listed.
+# Groq is the most reliable/fastest tier today; OpenRouter :free slugs get 429'd under
+# load, so each tier keeps NVIDIA + Groq behind them.
 tiers:
   fast:
-    openrouter: ["meta-llama/llama-3.3-70b-instruct:free", "google/gemini-2.0-flash-exp:free"]
-    nvidia: ["meta/llama-3.3-70b-instruct"]
-    groq: ["llama-3.3-70b-versatile"]
+    openrouter: ["nvidia/nemotron-3-super-120b-a12b:free", "minimax/minimax-m3:free", "google/gemma-4-31b-it:free"]
+    nvidia: ["nvidia/nemotron-3-nano-30b-a3b", "openai/gpt-oss-20b"]
+    groq: ["openai/gpt-oss-20b", "openai/gpt-oss-120b", "qwen/qwen3.8-27b"]
   reasoning:
-    openrouter: ["deepseek/deepseek-chat-v3-0324:free", "deepseek/deepseek-r1:free"]
-    nvidia: ["deepseek-ai/deepseek-r1"]
-    groq: ["deepseek-r1-distill-llama-70b"]
+    openrouter: ["nvidia/nemotron-3-super-120b-a12b:free", "minimax/minimax-m3:free"]
+    nvidia: ["deepseek-ai/deepseek-v4-pro-0813", "openai/gpt-oss-20b"]
+    groq: ["openai/gpt-oss-120b", "qwen/qwen3.8-27b"]
