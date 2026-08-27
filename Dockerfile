@@ -10,6 +10,9 @@ RUN npm run build
 FROM python:3.12-slim AS runtime
 WORKDIR /app
 ENV PYTHONUNBUFFERED=1
+# Non-editable install lands under site-packages; point the code at the tree that
+# actually holds config/ prompts/ frontend/ (see app/config/settings.py).
+ENV APP_ROOT=/app
 
 COPY pyproject.toml README.md ./
 COPY src/ src/
